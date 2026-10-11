@@ -4,7 +4,7 @@
 [![Latest Release](https://img.shields.io/github/v/release/seifer08ms/zotero-review-studio)](https://github.com/seifer08ms/zotero-review-studio/releases/latest)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-**Current version: v0.3.1 (beta)** · [Download XPI](https://github.com/seifer08ms/zotero-review-studio/releases/latest/download/zotero-review-studio-0.3.1.xpi) · [中文说明](README.zh-CN.md)
+**Current version: v0.3.1 (beta, Zotero 7+)** · [Download XPI](https://github.com/seifer08ms/zotero-review-studio/releases/latest/download/zotero-review-studio-0.3.1.xpi) · [中文说明](README.zh-CN.md)
 
 > This is a beta release. Test with a small number of non-sensitive papers before production use.
 
