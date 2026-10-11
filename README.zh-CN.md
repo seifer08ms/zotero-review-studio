@@ -1,4 +1,4 @@
-# Zotero Review Studio v0.3.1（Zotero 7 综述研究工作台）
+# Zotero Review Studio v0.4.0（Zotero 7 综述研究工作台）
 
 [![Build and Test](https://github.com/seifer08ms/zotero-review-studio/actions/workflows/build.yml/badge.svg)](https://github.com/seifer08ms/zotero-review-studio/actions/workflows/build.yml)
 [![最新版本](https://img.shields.io/github/v/release/seifer08ms/zotero-review-studio)](https://github.com/seifer08ms/zotero-review-studio/releases/latest)
@@ -8,6 +8,18 @@
 > 当前为测试版，请先使用少量非敏感论文验证模型接口和 Zotero 7 的实际兼容性。
 
 面向多篇论文的证据驱动型文献综述、Research Gap 分析与可复用综述写作模板。适用于大规模 Zotero 文献库：**只处理用户勾选的文献**，逐篇、分段分析，不批量读取全部馆藏 PDF。
+
+## v0.4.0：默认支持官网 ChatGPT 账号授权，无需 API Key
+
+**新安装时默认选择“ChatGPT 官网账号（无需 API Key）”。** 在“管理 API / 设置”中点击**使用 ChatGPT 登录**，会打开系统浏览器的 OpenAI 官方授权页面。符合官方资格的 ChatGPT Plus / Pro 用户可以授权本开源插件使用套餐中的一部分模型用量，**无需另行购买普通 API Key**。是否具备权限、可用模型、额度和速率限制，以当前登录的 ChatGPT 账户及 OpenAI 官方规则为准。**不是无限免费调用**，也不是自动复用网页版/Codex 的登录 Cookie。
+
+第一次使用建议：选择“ChatGPT 官网账号” → 点击“使用 ChatGPT 登录” → 在网页上同意授权 → 点击“读取可用模型” → 点击“测试当前 API” → 确认论文数据传输同意 → 开始分析。所有论文发送都仍需要你主动确认。原有 DeepSeek / 通义千问 / OpenAI API / Ollama 等配置依然支持；升级已有插件后保留原来正在使用的配置，额外添加官网 ChatGPT 账号选项。
+
+**登录安全：** 本插件使用 OpenAI [官方 Sign in with ChatGPT](https://developers.openai.com/siwc/quickstart) 公开协议，包含 PKCE、签名身份令牌核验、权限核验、令牌刷新和退出撤销。授权凭据存入 Zotero/Gecko 的加密密码管理器，**不会写到项目断点、普通偏好设置或 GitHub**。模型推理通过公开 Responses API，指定 `store:false` 与 `stream:true`。独立 HTTP/SOCKS5 代理可用于插件内的模型、令牌和身份验证网络请求；但**系统浏览器打开的授权网页遵循浏览器自己的代理设置**，插件无法强制改变外部浏览器的网络连接。
+
+**下拉框显示修复：** Zotero XUL 窗口里原生 HTML 下拉菜单可能和旧控件/其他内容互相穿插。现在替换为有不透明背景、独立浮层、最大高度、滚动和键盘导航的自绘菜单；关闭时不更改原来的模型/API/模板选项数据。
+
+**测试边界：** Node.js 已验证 OAuth 授权码、加密存储接口模拟、令牌刷新、模型请求；Chromium 已验证菜单打开/关闭及完整研究工作流。但尚未在你的 Zotero 7.0.32 桌面端实际完成 OpenAI 授权，所以首次安装请先使用一篇非敏感论文测试，不保证所有地区、账号和代理都能成功授权。
 
 ## v0.3.1 的资源优化（不改变分析结果）
 
@@ -79,13 +91,14 @@
 
 **Gap 是对当前证据样本的综合，不等于已证实的整个研究领域的空白。** 作者自述的局限和模型推断的潜在 Gap 分开呈现；请检查反例、评测条件、方法适用边界，以及原始论文及页码。在线文献若无 PDF 只能使用摘要，不能假称已分析全文。
 
-单轮最多 35 篇论文（建议先试 3–5 篇）。默认每篇最多 180,000 字符、每块 11,000 字符，并显示模型调用量上限的估计。此版本支持 **OpenAI 兼容 Chat Completions**，尚未提供各服务商的原生专属协议。实际发送论文内容前必须确认服务商、网络路线和数据传输同意。
+单轮最多 35 篇论文（建议先试 3–5 篇）。默认每篇最多 180,000 字符、每块 11,000 字符，并显示模型调用量上限的估计。此版本支持**通过官网 ChatGPT 账户授权使用公开 Responses API**，以及单独配置的 OpenAI 兼容 Chat Completions 服务，暂不支持各服务商其他原生协议。实际发送论文内容前必须确认服务商、网络路线和数据传输同意。
 
 **测试状态：** Node.js 核心/模拟网络/断点/页码/单章节单元测试，以及 Chromium 页面 UI 模拟测试已通过。Gecko 网络请求通道、真实 Zotero 图形界面、具体 API/代理、PDF 页码准确性在你的文献库上仍需现场验证。建议先用少量不敏感论文试运行。
 
 ## 构建、测试
 
 ```bash
+node tests/chatgpt.test.js
 node tests/core.test.js
 node tests/runtime.test.js
 node tests/exemplar.test.js
@@ -100,7 +113,7 @@ python3 tests/browser_smoke.py  # 需要 Playwright + Chromium
 python3 scripts/build_xpi.py
 ```
 
-XPI 输出位于 `dist/zotero-review-studio-0.3.1.xpi`。无需 npm 安装。
+XPI 输出位于 `dist/zotero-review-studio-0.4.0.xpi`。无需 npm 安装。
 
 MIT License.
 

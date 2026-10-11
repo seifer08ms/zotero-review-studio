@@ -1,4 +1,4 @@
-/* Local-only configuration model for OpenAI-compatible Chat Completions APIs.
+/* Local-only configuration model for ChatGPT OAuth and compatible Chat Completions APIs.
  * Passwords are deliberately NOT serialized in the profiles JSON.
  * A user may explicitly opt in to saving a separate plaintext key preference.
  */
@@ -6,6 +6,7 @@ var ReviewProfiles = (function () {
   'use strict';
 
   const PRESETS = Object.freeze([
+    {id:'chatgpt',name:'ChatGPT 官网账号（无需 API Key）',endpoint:'https://api.openai.com/v1/responses',model:'gpt-6.1-sol'},
     {id:'openai',name:'OpenAI',endpoint:'https://api.openai.com/v1/chat/completions',model:'gpt-4.1-mini'},
     {id:'deepseek',name:'DeepSeek',endpoint:'https://api.deepseek.com/chat/completions',model:'deepseek-chat'},
     {id:'qwen',name:'通义千问（DashScope）',endpoint:'https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions',model:'qwen-plus'},
@@ -20,26 +21,26 @@ var ReviewProfiles = (function () {
   function generateId() { return 'api-'+Date.now().toString(36)+'-'+Math.random().toString(36).slice(2,8); }
   function sanitize(raw, index=0) {
     const p=raw&&typeof raw==='object'?raw:{};
-    const base=preset(p.provider||'openai');
+    const base=preset(p.provider||(p.endpoint?'openai':'chatgpt'));
     return {
       id: typeof p.id==='string'&&/^[a-zA-Z0-9_-]{3,90}$/.test(p.id)?p.id:generateId(),
       name: String(p.name||base.name+' '+(index+1)).trim().slice(0,70),
       provider:base.id,
       endpoint:String(p.endpoint!==undefined?p.endpoint:base.endpoint).trim().slice(0,2000),
       model:String(p.model!==undefined?p.model:base.model).trim().slice(0,180),
-      route:p.route==='gateway'?'gateway':'zotero',
+      route:base.id==='chatgpt'?'zotero':p.route==='gateway'?'gateway':'zotero',
       gatewayEndpoint:String(p.gatewayEndpoint||'').trim().slice(0,2000),
       proxyMode:['inherit','direct','custom'].includes(p.proxyMode)?p.proxyMode:'inherit',
       proxyType:p.proxyType==='socks5'?'socks5':'http',
       proxyHost:String(p.proxyHost||'').trim().slice(0,253),
       proxyPort:p.proxyPort===undefined || p.proxyPort===null || p.proxyPort===''?'':Number(p.proxyPort),
       proxyRemoteDNS:p.proxyRemoteDNS!==false,
-      rememberKey:p.rememberKey===true,
+      rememberKey:base.id==='chatgpt'?false:p.rememberKey===true,
       jsonMode:p.jsonMode!==false,
       timeoutMs:Math.max(5000,Math.min(300000,Number(p.timeoutMs)||120000)),
     };
   }
-  function create(provider='openai',name='') {
+  function create(provider='chatgpt',name='') {
     const p=preset(provider);
     return sanitize({id:generateId(),name:name||p.name,provider:p.id,
       endpoint:p.endpoint,model:p.model,route:'zotero',proxyMode:'inherit',proxyType:'http',proxyHost:'127.0.0.1',proxyPort:7890,rememberKey:false,jsonMode:true,timeoutMs:120000});
@@ -49,18 +50,31 @@ var ReviewProfiles = (function () {
     try {const raw=getPref('apiProfiles','');const parsed=JSON.parse(raw);if(Array.isArray(parsed))all=parsed;}
     catch (_) {}
     if (!all.length) {
-      const migrated=create('openai','OpenAI · 默认');
-      migrated.endpoint=String(getPref('endpoint',migrated.endpoint)||migrated.endpoint);
-      migrated.model=String(getPref('model',migrated.model)||migrated.model);
       const legacyKey=String(getPref('apiKey','')||'');
+      const legacyEndpoint=String(getPref('endpoint','')||'');
+      const legacyModel=String(getPref('model','')||'');
+      const customized=legacyKey || (legacyEndpoint && legacyEndpoint!=='https://api.openai.com/v1/chat/completions')
+        || (legacyModel && legacyModel!=='gpt-4.1-mini');
+      if(!customized){
+        const fresh=create('chatgpt','ChatGPT · 官网账号（默认）');
+        return {profiles:[fresh],activeId:fresh.id,migratedKey:''};
+      }
+      const migrated=create('openai','OpenAI · 原有配置');
+      if(legacyEndpoint)migrated.endpoint=legacyEndpoint;
+      if(legacyModel)migrated.model=legacyModel;
       migrated.rememberKey=!!legacyKey;
       return {profiles:[migrated],activeId:migrated.id,migratedKey:legacyKey};
     }
     const ids=new Set();
     const profiles=all.slice(0,30).map(sanitize).filter(p=>{if(ids.has(p.id))return false;ids.add(p.id);return true;});
-    if(!profiles.length)profiles.push(create('openai'));
+    if(!profiles.length)profiles.push(create('chatgpt'));
+    // Add the no-API-key login provider during upgrades without discarding existing profiles.
     const active=getPref('activeAPIProfile','');
-    return {profiles,activeId:ids.has(active)?active:profiles[0].id,migratedKey:''};
+    const savedActive=ids.has(active)?active:profiles[0].id;
+    if(!profiles.some(p=>p.provider==='chatgpt') && profiles.length<30){
+      profiles.unshift(create('chatgpt','ChatGPT · 官网账号'));
+    }
+    return {profiles,activeId:savedActive,migratedKey:''};
   }
   function save(setPref,profiles,activeId) {
     const sanitized=profiles.slice(0,30).map(sanitize);
@@ -80,13 +94,13 @@ var ReviewProfiles = (function () {
   }
   function effectiveEndpoint(profile) {
     const p=sanitize(profile);
-    return allowedURL(p.route==='gateway'?p.gatewayEndpoint:p.endpoint);
+    return p.provider==='chatgpt'?'https://api.openai.com/v1/responses':allowedURL(p.route==='gateway'?p.gatewayEndpoint:p.endpoint);
   }
   function validate(profile) {
     const p=sanitize(profile);
     if(!p.name)throw new Error('请为 API 配置填写名称');
     if(!p.model)throw new Error('请填写模型名称');
-    allowedURL(p.endpoint);
+    if(p.provider!=='chatgpt')allowedURL(p.endpoint);
     if(p.proxyMode==='custom') {
       if(typeof ReviewNetwork!=='undefined')ReviewNetwork.proxyConfig(p);
       else { const port=Number(p.proxyPort); if(!p.proxyHost||!Number.isInteger(port)||port<=0||port>65535)throw new Error('请填写有效的独立代理主机与端口'); }

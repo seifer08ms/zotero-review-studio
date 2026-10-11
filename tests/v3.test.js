@@ -15,10 +15,13 @@ async function testProxy(){
   custom.proxyMode='custom';custom.proxyType='socks5';custom.proxyHost='127.0.0.1';custom.proxyPort=1080;
   const metadata={};Profiles.save((k,v)=>metadata[k]=v,[direct,custom],custom.id);
   const restored=Profiles.load((k,fallback)=>metadata[k]??fallback);
-  assert.equal(restored.profiles[0].proxyMode,'direct');
-  assert.equal(restored.profiles[1].proxyMode,'custom');
-  assert.equal(restored.profiles[1].proxyPort,1080);
-  assert.equal(Network.proxyConfig(restored.profiles[1]).type,'socks5');
+  const restoredDirect=restored.profiles.find(p=>p.id===direct.id);
+  const restoredCustom=restored.profiles.find(p=>p.id===custom.id);
+  assert.equal(restored.activeId,custom.id);
+  assert.equal(restoredDirect.proxyMode,'direct');
+  assert.equal(restoredCustom.proxyMode,'custom');
+  assert.equal(restoredCustom.proxyPort,1080);
+  assert.equal(Network.proxyConfig(restoredCustom).type,'socks5');
   assert.throws(()=>Network.proxyConfig({...custom,proxyPort:0}),/代理端口/);
   assert.throws(()=>Network.proxyConfig({...custom,proxyHost:'user:pass@host'}),/代理地址/);
   const call=[];

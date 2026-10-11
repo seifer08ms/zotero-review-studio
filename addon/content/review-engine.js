@@ -223,6 +223,24 @@ var ReviewRuntime = (function () {
 
     const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
     async function ask(settings,messages,format='json',maxTokens=null) {
+      if(settings.provider==='chatgpt'){
+        if(typeof ReviewChatGPT==='undefined')throw new Error('缺少官方 ChatGPT 登录模块');
+        let last;
+        for(let attempt=0;attempt<4;attempt++){
+          if(cancelled)throw new Error('用户已取消');
+          try{return await ReviewChatGPT.request(messages,settings);}
+          catch(e){
+            last=e;
+            const status=Number(e?.status||e?.xmlhttp?.status||0);
+            if(attempt<3 && [429,500,502,503,504].includes(status)){
+              await new Promise(resolve=>setTimeout(resolve,(attempt+1)*1700));
+              continue;
+            }
+            break;
+          }
+        }
+        throw new Error('ChatGPT 模型请求失败：'+String(last?.message||last));
+      }
       const endpoint=enforceEndpoint(settings.endpoint);
       const model=String(settings.model).trim();
       const reasoning=/^(gpt-[56](?:[.-]|$)|o[1-9](?:[.-]|$))/i.test(model);

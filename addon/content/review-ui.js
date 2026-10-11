@@ -9,6 +9,7 @@
   }
   const z = bridge.zotero;
   const rt = ReviewRuntime.create(bridge);
+  if(typeof ReviewChatGPT!=='undefined')ReviewChatGPT.configure(z);
   const state = {
     included: new Map(), suggestions: [], templates: [],
     busy:false, result:null, progressLines:[], language:'zh-CN',
@@ -167,6 +168,7 @@
       select.appendChild(option);
     }
     select.value=state.templates.some(t=>t.id===old)?old:'gap';
+    refreshDropdowns();
   }
   function saveCustomTemplate(){
     const name=byId('customTemplateName').value.trim();
@@ -209,6 +211,7 @@
     if(state.sessionKeys.has(p.id)) return state.sessionKeys.get(p.id)||'';
     return p.rememberKey ? String(rt.getPref('profileSecret.'+p.id,'')||'') : '';
   }
+  function refreshDropdowns(){ReviewDropdown?.refreshAll?.();}
   function fillProfileSelectors() {
     for(const id of ['apiProfileSelect','activeProfileQuick']) {
       const select=byId(id);clear(select);
@@ -220,12 +223,14 @@
       select.value=state.activeAPIId;
     }
     byId('consentProvider').textContent=activeProfile()?.name||'当前 API';
+    refreshDropdowns();
   }
   function fillProviderPresets() {
     const select=byId('apiProvider');clear(select);
     for(const preset of ReviewProfiles.PRESETS){
       const option=elm('option',null,preset.name);option.value=preset.id;select.appendChild(option);
     }
+    refreshDropdowns();
   }
   function updateGatewayVisibility(){
     byId('gatewayLabel').classList.toggle('hidden',byId('apiRoute').value!=='gateway');
@@ -234,6 +239,64 @@
     const custom=byId('proxyMode').value==='custom';
     for(const id of ['proxyTypeLabel','proxyHostLabel','proxyPortLabel'])byId(id).classList.toggle('hidden',!custom);
     byId('proxyDNSLabel').classList.toggle('hidden',!custom||byId('proxyType').value!=='socks5');
+  }
+  function isOfficial(){return byId('apiProvider').value==='chatgpt';}
+  function showChatGPTFields(){
+    const official=isOfficial();
+    for(const id of ['chatgptAuthBox'])byId(id).classList.toggle('hidden',!official);
+    for(const id of ['endpointLabel','apiKeyLabel','apiRouteLabel','rememberKeyLabel']){
+      byId(id).classList.toggle('hidden',official);
+    }
+    if(official){byId('gatewayLabel').classList.add('hidden');}
+    else updateGatewayVisibility();
+    const login=(typeof ReviewChatGPT!=='undefined')?ReviewChatGPT.status():{connected:false};
+    byId('chatgptAuthStatus').textContent=login.connected
+      ?('已授权 ChatGPT 账户'+(login.email?'：'+login.email:'')+'；可以测试或分析')
+      :'尚未授权。点击“使用 ChatGPT 登录”，在 OpenAI 官方页面同意后即可使用。';
+    byId('signInChatGPT').textContent=login.connected?'重新授权 ChatGPT':'使用 ChatGPT 登录';
+    byId('signOutChatGPT').disabled=!login.connected||state.busy;
+    byId('refreshChatGPTModels').disabled=!login.connected||state.busy;
+    refreshDropdowns();
+  }
+  async function loginChatGPT(){
+    if(state.busy)return;
+    const button=byId('signInChatGPT');button.disabled=true;
+    byId('chatgptAuthStatus').textContent='正在打开 OpenAI 官方授权页面，请在浏览器登录并确认权限…';
+    try{
+      await ReviewChatGPT.signIn(getSettings());
+      byId('dataConsent').checked=false;
+      const settings=getSettings();
+      try{
+        const models=await ReviewChatGPT.listModels(settings);
+        const selected=byId('model').value.trim();
+        if(models.length && !models.some(m=>m.id===selected))byId('model').value=models[0].id;
+      }catch(e){byId('settingsStatus').textContent='已登录，但读取模型目录失败：'+e.message;}
+      saveSettings({silent:true});
+      showChatGPTFields();
+      byId('settingsStatus').textContent='官方 ChatGPT 登录成功。建议点击“测试当前 API”，再进行全文分析。';
+    }catch(e){byId('chatgptAuthStatus').textContent='登录失败：'+(e.message||e);}
+    finally{button.disabled=false;updateRunOverview();}
+  }
+  async function logoutChatGPT(){
+    if(state.busy)return;
+    if(!confirm('要退出本插件中的 ChatGPT 授权吗？其他 API 配置不会删除。'))return;
+    try{await ReviewChatGPT.signOut(getSettings());}
+    catch(e){byId('settingsStatus').textContent='提示：'+e.message;}
+    byId('dataConsent').checked=false;
+    showChatGPTFields();updateRunOverview();
+  }
+  async function listChatGPTModels(){
+    const btn=byId('refreshChatGPTModels');btn.disabled=true;
+    byId('settingsStatus').textContent='正在读取 ChatGPT 官方模型目录…';
+    try{
+      const choices=await ReviewChatGPT.listModels(getSettings());
+      if(!choices.length)throw new Error('当前账号没有返回可列出的模型');
+      const existing=byId('model').value;
+      if(!choices.some(x=>x.id===existing))byId('model').value=choices[0].id;
+      byId('settingsStatus').textContent='已读取 '+choices.length+' 个模型；当前选择：'+byId('model').value+'。可编辑模型名称。';
+      saveSettings({silent:true});
+    }catch(e){byId('settingsStatus').textContent='读取模型失败：'+e.message;}
+    finally{showChatGPTFields();btn.disabled=!ReviewChatGPT.isConnected();updateRunOverview();}
   }
   function renderProfile(p){
     if(!p) return;
@@ -255,6 +318,7 @@
     updateGatewayVisibility();
     updateProxyVisibility();
     fillProfileSelectors();
+    showChatGPTFields();
     byId('settingsStatus').textContent='当前配置：'+p.name+'；模型 '+p.model;
     updateRunOverview();
   }
@@ -330,7 +394,7 @@
       provider:profile.provider,
       endpoint,
       model:profile.model,
-      apiKey:byId('apiKey').value.trim(),
+      apiKey:profile.provider==='chatgpt'?'':byId('apiKey').value.trim(),
       jsonMode:profile.jsonMode,
       timeoutMs:profile.timeoutMs,
       route:profile.route,
@@ -350,8 +414,9 @@
     persistAPIProfiles();
     fillProfileSelectors();
     updateRunOverview();
-    if(!silent)byId('settingsStatus').textContent=profile.rememberKey
-      ?'设置已保存；此配置密钥以明文保存在本机 Zotero 偏好中'
+    if(!silent)byId('settingsStatus').textContent=profile.provider==='chatgpt'
+      ?'设置已保存；ChatGPT 登录凭据保存在 Zotero 加密凭据库，不需要 API Key'
+      :profile.rememberKey?'设置已保存；此配置密钥以明文保存在本机 Zotero 偏好中'
       :'设置已保存；密钥仅留在当前窗口，不写入磁盘';
     return true;
   }
@@ -373,7 +438,7 @@
     const p=clone
       ?ReviewProfiles.sanitize({...current,id:ReviewProfiles.create(current.provider).id,
         name:current.name+' · 副本',rememberKey:false})
-      :ReviewProfiles.create('openai','新 API 配置 '+(state.apiProfiles.length+1));
+      :ReviewProfiles.create('chatgpt','新模型配置 '+(state.apiProfiles.length+1));
     state.apiProfiles.push(p);
     state.activeAPIId=p.id;
     state.sessionKeys.set(p.id,''); // cloning intentionally excludes credentials
@@ -398,7 +463,11 @@
     if(state.busy)return;
     let settings;
     try {settings=getSettings();}catch(e){byId('settingsStatus').textContent='不能测试：'+e.message;return;}
-    if(!settings.apiKey && !/localhost|127\.0\.0\.1|\[::1\]/.test(settings.endpoint)){
+    if(settings.provider==='chatgpt' && !ReviewChatGPT.isConnected()){
+      byId('settingsStatus').textContent='请先点击“使用 ChatGPT 登录”，完成官方授权';
+      byId('settingsPanel').classList.remove('hidden');return;
+    }
+    if(settings.provider!=='chatgpt' && !settings.apiKey && !/localhost|127\.0\.0\.1|\[::1\]/.test(settings.endpoint)){
       if(!confirm('没有填写 API Key。确认当前服务无需密钥并发送一次测试请求吗？'))return;
     }
     const button=byId('testAPI');button.disabled=true;
@@ -422,7 +491,8 @@
     const checks=[
       {ok:included>0,title:included+' 篇论文已选'},
       {ok:question.length>=12,title:question.length>=12?'研究问题已填写':'需要具体研究问题'},
-      {ok:apiValid,title:apiValid?'当前模型：'+p.name:'API 配置尚不完整'},
+      {ok:apiValid && (p.provider!=='chatgpt'||ReviewChatGPT.isConnected()),
+        title:p.provider==='chatgpt' && !ReviewChatGPT.isConnected()?'需要先登录 ChatGPT':apiValid?'当前模型：'+p.name:'API 配置尚不完整'},
       {ok:!!tested,title:tested?'API 已测试（本次会话）':'建议先测试 API（可选）'},
       {ok:byId('dataConsent').checked,title:byId('dataConsent').checked?'已确认数据传输':'待确认数据传输'},
     ];
@@ -475,6 +545,8 @@
     }
     byId('cancelBtn').disabled=!on;
     if(!on) byId('extractExemplarBtn').disabled=!state.exemplar;
+    showChatGPTFields();
+    refreshDropdowns();
     renderIncluded(); renderSuggestions();updateRunOverview();
   }
   function log(text){
@@ -592,7 +664,11 @@
     let settings;
     try {settings=getSettings();}
     catch(e){alert('请先填写有效的 API 网址和模型：'+e.message);byId('settingsPanel').classList.remove('hidden');return;}
-    if(!settings.apiKey && !/localhost|127\.0\.0\.1|\[::1\]/.test(settings.endpoint)){
+    if(settings.provider==='chatgpt' && !ReviewChatGPT.isConnected()){
+      byId('settingsStatus').textContent='请先点击“使用 ChatGPT 登录”，完成官方授权';
+      byId('settingsPanel').classList.remove('hidden');return;
+    }
+    if(settings.provider!=='chatgpt' && !settings.apiKey && !/localhost|127\.0\.0\.1|\[::1\]/.test(settings.endpoint)){
       if(!confirm('云端 API Key 为空。确认当前服务无需 API Key 吗？'))return;
     }
     const template=state.templates.find(t=>t.id===byId('templateSelect').value)||state.templates[0];
@@ -677,6 +753,7 @@
     }
     if([...sel.options].some(x=>x.value===old))sel.value=old;
     byId('regenerateChapterBtn').disabled=state.busy||!state.result||evidenceStale()||!sel.options.length;
+    refreshDropdowns();
   }
   async function regenerateSelectedChapter(){
     if(state.busy||!state.result||evidenceStale())return;
@@ -870,10 +947,13 @@
   }
 
   function wire(){
-    byId('settingsBtn').addEventListener('click',()=>byId('settingsPanel').classList.toggle('hidden'));
+    byId('settingsBtn').addEventListener('click',()=>{byId('settingsPanel').classList.toggle('hidden');ReviewDropdown.close();});
     byId('closeSettings').addEventListener('click',()=>byId('settingsPanel').classList.add('hidden'));
     byId('saveSettings').addEventListener('click',()=>saveSettings());
     byId('testAPI').addEventListener('click',()=>void testActiveAPI());
+    byId('signInChatGPT').addEventListener('click',()=>void loginChatGPT());
+    byId('signOutChatGPT').addEventListener('click',()=>void logoutChatGPT());
+    byId('refreshChatGPTModels').addEventListener('click',()=>void listChatGPTModels());
     byId('apiProfileSelect').addEventListener('change',()=>switchAPI(byId('apiProfileSelect').value));
     byId('activeProfileQuick').addEventListener('change',()=>switchAPI(byId('activeProfileQuick').value));
     byId('addAPIProfile').addEventListener('click',()=>addAPIProfile(false));
@@ -889,7 +969,11 @@
       byId('apiProfileName').value=preset.name;
       byId('apiKey').value='';byId('rememberKey').checked=false;
       byId('dataConsent').checked=false;
-      byId('settingsStatus').textContent='已应用服务商预设。请填写该服务的 API Key，然后保存或测试。';
+      byId('settingsStatus').textContent=preset.id==='chatgpt'
+        ?'请选择“使用 ChatGPT 登录”；无需 API Key。'
+        :'已应用服务商预设。请填写该服务的 API Key，然后保存或测试。';
+      showChatGPTFields();
+      refreshDropdowns();
       updateRunOverview();
     });
     for(const id of ['question','model','apiProfileName','endpoint','gatewayEndpoint','apiKey','proxyHost','proxyPort','proxyType','proxyRemoteDNS','chunkChars','maxCharsPerPaper','apiRoute']) {
@@ -957,7 +1041,10 @@
     });
   }
   async function init(){
+    ReviewDropdown.init();
+    try{ReviewChatGPT.restore();}catch(e){byId('chatgptAuthStatus').textContent='凭据库不可用：'+e.message;}
     wire();loadSettings();fillTemplates();renderIncluded();updateRunOverview();
+    refreshDropdowns();
     try{state.latestCheckpoint=await rt.loadLatestCheckpoint();}
     catch(e){byId('checkpointStatus').textContent='本地项目读取失败：'+e.message;}
     try{

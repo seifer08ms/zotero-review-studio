@@ -118,3 +118,40 @@ details.evidence-paper > summary.evidence-summary:focus-visible {
   outline:2px solid var(--accent); outline-offset:3px;
 }
 details.evidence-paper .evidence-paper-detail { padding-top:9px; }
+
+/* Opaque in-document dropdowns avoid platform-native popup/XUL layering conflicts. */
+.rs-picker {width:100%;min-width:0;position:relative;display:block;}
+.rs-picker .rs-native-select {display:none !important;}
+.rs-picker-button {width:100%;min-width:0;min-height:35px;padding:8px 33px 8px 11px;text-align:left;
+  border:1px solid var(--line);border-radius:8px;background:var(--panel);color:var(--ink);
+  font:inherit;font-size:12px;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+  position:relative;}
+.rs-picker-button:after {content:'⌄';position:absolute;right:11px;top:50%;transform:translateY(-54%);color:var(--muted);font-size:16px;}
+.rs-picker-button:hover:not(:disabled) {border-color:var(--blue);}
+.rs-picker-button:focus-visible {outline:2px solid var(--blue);outline-offset:1px;}
+.rs-picker-button:disabled {opacity:.50;cursor:default;}
+.rs-dropdown-portal {position:fixed;display:flex;flex-direction:column;box-sizing:border-box;
+  z-index:2147483640;max-height:292px;overflow-y:auto;overscroll-behavior:contain;
+  padding:5px;border:1px solid var(--line);border-radius:10px;background:var(--panel);
+  color:var(--ink);box-shadow:0 12px 28px rgba(0,0,0,.23),0 2px 7px rgba(0,0,0,.12);}
+.rs-dropdown-portal.hidden {display:none!important;}
+.rs-dropdown-option {display:block;flex:0 0 auto;min-height:34px;width:100%;padding:8px 10px;
+  color:var(--ink);text-align:left;font:inherit;font-size:12px;line-height:1.35;
+  cursor:pointer;border:0;border-radius:6px;background:transparent;white-space:normal;overflow-wrap:anywhere;}
+.rs-dropdown-option:hover:not(:disabled),.rs-dropdown-option:focus-visible {background:var(--pale);outline:none;}
+.rs-dropdown-option.current {color:var(--blue);background:var(--pale);font-weight:700;}
+.rs-dropdown-option.current:before {content:'✓';margin-right:7px;}
+.rs-dropdown-option:disabled {opacity:.4;cursor:default;}
+#activeProfileQuick {width:200px;max-width:24vw;}
+#activeProfileQuick.rs-native-select {display:none!important;}
+.top-actions>.rs-picker{width:220px;max-width:24vw;flex:0 1 220px;}
+.api-toolbar>.rs-picker{flex:1;min-width:220px;}
+.inline-row>.rs-picker{flex:1;min-width:0;}
+@media(max-width:1150px){.top-actions>.rs-picker{width:150px;max-width:20vw}}
+
+/* v0.4: Official ChatGPT sign-in without an API key. */
+.chatgpt-auth-panel {background:var(--pale);border:1px solid var(--line);padding:14px;border-radius:11px;margin:10px 0 15px;}
+.chatgpt-auth-title {font-weight:750;font-size:14px;color:var(--ink);}
+.chatgpt-auth-actions {display:flex;flex-wrap:wrap;gap:8px;margin:11px 0;align-items:center;}
+.chatgpt-auth-actions .btn{white-space:nowrap;}
+#chatgptAuthStatus {font-size:12px;font-weight:600;}

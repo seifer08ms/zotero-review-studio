@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.4.0 — ChatGPT-plan OAuth and stable in-dialog selectors
+
+- Fresh installations default to official “Sign in with ChatGPT” (eligible Plus/Pro account authorization) without requiring an API key; existing API profile selection is preserved on upgrade.
+- Implements official dynamic OAuth client registration, PKCE, signed OIDC and scope checks, encrypted Gecko Login Manager credential storage, token refresh and sign-out. Never accesses ChatGPT/Codex cookies or private backends.
+- Uses public OpenAI Responses API with required `store:false` and `stream:true`; account-specific available model lookup is exposed in settings.
+- Per-profile proxy settings apply to OpenAI token/JWKS/model/inference traffic; external system-browser authorization retains the browser’s networking settings.
+- Replaced platform-native HTML dropdown popup rendering with a single opaque, scrollable, keyboard-friendly in-dialog overlay to avoid interference with Zotero XUL controls.
+- Preserves the v0.3.1 PDF evidence/Gap/template workflow, checkpoints and existing external API configurations.
+- Added ChatGPT OAuth/JWT/refresh/Responses protocol mocks and browser selector UI regression tests. Live Zotero/Desktop OAuth end-to-end remains unverified.
+
+
 ## 0.3.1 — evidence-UI virtualization and incremental checkpoint I/O
 
 - Evidence verification now normalizes each PDF text chunk only once, not once per claim. The exact quote-matching rule and all evidence IDs remain unchanged.

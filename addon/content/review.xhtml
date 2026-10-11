@@ -10,7 +10,7 @@
       <html:div class="brand">
         <html:div class="brand-icon">R</html:div>
         <html:div>
-          <html:h1>Review Studio <html:span class="version">v0.3.1</html:span></html:h1>
+          <html:h1>Review Studio <html:span class="version">v0.4.0</html:span></html:h1>
           <html:p>多论文证据分析 · Research Gap · 综述初稿</html:p>
         </html:div>
       </html:div>
@@ -75,23 +75,34 @@
             <html:button id="cloneAPIProfile" class="btn secondary" type="button">复制配置</html:button>
             <html:button id="deleteAPIProfile" class="btn text" type="button">删除</html:button>
           </html:div>
-          <html:div class="settings-grid">
+          <html:div id="chatgptAuthBox" class="chatgpt-auth-panel hidden">
+          <html:div class="chatgpt-auth-title">使用你的 ChatGPT 官网账号</html:div>
+          <html:p class="helper">通过 OpenAI 官方页面授权，符合条件的 ChatGPT Plus / Pro 账号可使用套餐用量，不需要 API Key。该功能不会读取网页版 Cookie 或 Codex 桌面客户端的凭据。</html:p>
+          <html:div class="chatgpt-auth-actions">
+            <html:button id="signInChatGPT" class="btn primary" type="button">使用 ChatGPT 登录</html:button>
+            <html:button id="refreshChatGPTModels" class="btn secondary" type="button">读取可用模型</html:button>
+            <html:button id="signOutChatGPT" class="btn text" type="button">退出登录</html:button>
+          </html:div>
+          <html:div id="chatgptAuthStatus" class="subtle" role="status">尚未连接。首次使用请点击“使用 ChatGPT 登录”。</html:div>
+          <html:p class="helper">授权会打开浏览器并返回 Zotero；登录后点击“测试当前 API”。仅向 OpenAI 官方 Responses API 发送你明确同意的内容；用量受 ChatGPT 套餐限制。</html:p>
+        </html:div>
+        <html:div class="settings-grid">
             <html:label>配置名称（如：DeepSeek 日常 / OpenAI 高精度）
               <html:input id="apiProfileName" type="text" maxlength="70" placeholder="为此 API 起一个容易辨认的名字" />
             </html:label>
             <html:label>服务商预设
               <html:select id="apiProvider"></html:select>
             </html:label>
-            <html:label>OpenAI 兼容 Chat Completions API
+            <html:label id="endpointLabel">OpenAI 兼容 Chat Completions API
               <html:input id="endpoint" type="url" placeholder="https://api.openai.com/v1/chat/completions"/>
             </html:label>
             <html:label>模型名称
               <html:input id="model" type="text" placeholder="gpt-4.1-mini / deepseek-chat / 本地模型" />
             </html:label>
-            <html:label>API Key（不同配置相互隔离）
+            <html:label id="apiKeyLabel">API Key（不同配置相互隔离）
               <html:input id="apiKey" type="password" autocomplete="off" placeholder="API Key（本地 Ollama 可留空）" />
             </html:label>
-            <html:label>网络连接方式（此配置独立保存）
+            <html:label id="apiRouteLabel">网络连接方式（此配置独立保存）
               <html:select id="apiRoute">
                 <html:option value="zotero">默认：跟随 Zotero / 系统代理</html:option>
                 <html:option value="gateway">使用专用 API 中转网关（兼容 Chat Completions）</html:option>
@@ -142,14 +153,14 @@
             </html:label>
           </html:div>
           <html:p id="proxyHelp" class="helper network-help">代理说明：每个 API 可以分别选“跟随 Zotero”、“强制直连”，或填写该 API 专属的 HTTP / SOCKS5 代理主机与端口。网络代理通过当前模型请求的 Gecko 通道实现，<html:strong>不会修改 Zotero 全局代理设置</html:strong>。另有可选 API 中转网关；网关不是 HTTP/SOCKS 代理，可能接触密钥和论文文本。当前版本不支持需账户密码认证的网络代理。</html:p>
-          <html:label class="checkline"><html:input id="rememberKey" type="checkbox" /> 在本机记住此配置的 API Key（将以明文写入 Zotero preferences；默认不保存）</html:label>
+          <html:label id="rememberKeyLabel" class="checkline"><html:input id="rememberKey" type="checkbox" /> 在本机记住此配置的 API Key（将以明文写入 Zotero preferences；默认不保存）</html:label>
           <html:div class="action-pair">
             <html:button id="saveSettings" class="btn primary" type="button">保存当前 API 与通用设置</html:button>
             <html:button id="testAPI" class="btn secondary" type="button">测试当前 API</html:button>
           </html:div>
           <html:div id="settingsStatus" class="setting-status subtle" role="status"></html:div>
           <html:div class="consent-box">
-            <html:label class="checkline"><html:input id="dataConsent" type="checkbox" /> 我确认：只有点击分析时，才会把选定论文的文本片段发送至<html:strong id="consentProvider">当前 API</html:strong>；使用中转网关时亦会经过该网关</html:label>
+            <html:label class="checkline"><html:input id="dataConsent" type="checkbox" /> 我确认：只有点击分析时，才会把选定论文的文本片段发送至<html:strong id="consentProvider">当前模型服务</html:strong>；使用中转网关时亦会经过该网关</html:label>
           </html:div>
         </html:section>
 
@@ -240,13 +251,15 @@
           </html:div>
         </html:section>
 
-        <html:footer class="footnote">本插件不会自动上传你未勾选的论文；范例论文也必须由你单独选择并确认分析。在线检索只传递关键词。全文分析和范例模板提炼都需要你明确同意发送 PDF 文本片段至选定模型接口。• v0.3.0 原型：不等同于系统性综述或 PRISMA 自动筛选。</html:footer>
+        <html:footer class="footnote">本插件不会自动上传你未勾选的论文；范例论文也必须由你单独选择并确认分析。在线检索只传递关键词。全文分析和范例模板提炼都需要你明确同意发送 PDF 文本片段至选定模型接口。• 当前为测试版：不等同于系统性综述或 PRISMA 自动筛选。</html:footer>
       </html:main>
     </html:div>
   </html:div>
   <script src="chrome://zoteroreviewstudio/content/review-core.js"/>
   <script src="chrome://zoteroreviewstudio/content/review-profiles.js"/>
   <script src="chrome://zoteroreviewstudio/content/review-network.js"/>
+  <script src="chrome://zoteroreviewstudio/content/review-chatgpt.js"/>
+  <script src="chrome://zoteroreviewstudio/content/review-dropdown.js"/>
   <script src="chrome://zoteroreviewstudio/content/review-checkpoints.js"/>
   <script src="chrome://zoteroreviewstudio/content/review-pages.js"/>
   <script src="chrome://zoteroreviewstudio/content/review-chapters.js"/>

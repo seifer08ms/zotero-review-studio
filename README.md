@@ -4,12 +4,27 @@
 [![Latest Release](https://img.shields.io/github/v/release/seifer08ms/zotero-review-studio)](https://github.com/seifer08ms/zotero-review-studio/releases/latest)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-**Current version: v0.3.1 (beta, Zotero 7+)** · [Download XPI](https://github.com/seifer08ms/zotero-review-studio/releases/latest/download/zotero-review-studio-0.3.1.xpi) · [中文说明](README.zh-CN.md)
+**Current version: v0.4.0 (beta)** · [Download XPI](https://github.com/seifer08ms/zotero-review-studio/releases/latest/download/zotero-review-studio-0.4.0.xpi) · [中文说明](README.zh-CN.md)
 
 > This is a beta release. Test with a small number of non-sensitive papers before production use.
 
 
 A Zotero 7 review-writing workspace for selecting papers, sequential PDF evidence extraction, cross-paper research-gap synthesis, OpenAlex/Zotero discovery, deriving new review templates from published survey PDFs, and generating editable Markdown reviews.
+
+## New in v0.4.0: official ChatGPT sign-in, no API key
+
+**New installations default to “Sign in with ChatGPT”**. Users with an eligible ChatGPT Plus or Pro plan can click **Use ChatGPT login** in API settings, authorize Zotero Review Studio in the **official system-browser OAuth flow**, then select an allowed model and test the connection. A paid OpenAI API key is **not required** for this account-based path. The user must explicitly authorize it; existing ChatGPT web or Codex desktop cookies are **never read**. The integration follows the open-source [Sign in with ChatGPT](https://developers.openai.com/siwc/quickstart) specification. Eligibility, model access and usage limits are controlled by the user's ChatGPT account and OpenAI. This is not unlimited inference and is separate from ordinary pay-as-you-go API billing.
+
+- Public endpoints only: OpenAI OAuth authorize/token/JWKS and `https://api.openai.com/v1/responses` with `store:false`, `stream:true`.
+- Per-account credentials are held in Gecko's encrypted Login Manager; they are **not copied to Zotero preferences, checkpoint files, GitHub, or another provider**. The provider configuration only contains model/proxy preferences.
+- Dynamic public-client registration with PKCE, OIDC signature/issuer/audience/nonce validation, scope checks and rotating refresh tokens. Log out removes the local stored credential and attempts server-side revocation.
+- Other saved OpenAI-compatible API profiles remain available; upgrades preserve the existing active configuration and add an optional ChatGPT login profile.
+- **Dropdown display fixed:** in-dialog, opaque, keyboard-accessible selection popups replace native HTML select popovers in Zotero XUL. Menus have a maximum height, scroll and click-outside dismissal, eliminating transparent/overlapping option layers.
+- API profile proxy setting is preserved for OpenAI model/catalog/token/JWKS calls. The **external sign-in page** uses the user's system browser and therefore follows that browser's own network settings; a per-profile proxy cannot override browser proxy settings.
+
+**First-use steps:** Install the XPI, open **Tools → Review Studio → Manage APIs / Settings**, select **ChatGPT official account**. Click **Use ChatGPT login**, finish consent in the browser, click **Refresh available models** and **Test current API**. Then separately confirm permission before sending selected paper excerpts for literature analysis. If login reports the account ineligible or usage exhausted, switch to another API or retry when access becomes available.
+
+**Validation limit:** The OAuth protocol, signing, refresh, streaming and dropdown UI have automated/mocked test coverage; the loopback callback and Login Manager have **not yet been exercised inside a real user's running Zotero 7**. Please test account authorization and model availability on your own installation before full-text work.
 
 ## Major features (0.3.x)
 
@@ -33,7 +48,7 @@ API keys remain in current window memory by default. Explicit opt-in stores a pe
 
 ## Important limitations
 
-For local Zotero 7.0.32, the Gecko per-request HTTP/SOCKS5 transport has been verified with mocked XPCOM interfaces, not a live running Gecko installation; actual proxy routing must be tested in the user's environment. Search/discovery is exploratory, not a systematic PRISMA review. PDF pages are physical file pages, not necessarily printed journal pages. PDF text extraction can fail or be expensive, so page lookup is opt-in and bounded. The plugin supports OpenAI-compatible Chat Completions, not arbitrary native model APIs. This is a beta requiring desktop validation.
+For local Zotero 7.0.32, the Gecko per-request HTTP/SOCKS5 transport has been verified with mocked XPCOM interfaces, not a live running Gecko installation; actual proxy routing must be tested in the user's environment. Search/discovery is exploratory, not a systematic PRISMA review. PDF pages are physical file pages, not necessarily printed journal pages. PDF text extraction can fail or be expensive, so page lookup is opt-in and bounded. The plugin supports **official ChatGPT-plan OAuth via the public Responses API** and separately configured OpenAI-compatible Chat Completions APIs, but not arbitrary other native protocols. This is a beta requiring desktop validation.
 
 Detailed Chinese instructions: [README.zh-CN.md](README.zh-CN.md).
 
@@ -45,16 +60,17 @@ node tests/runtime.test.js
 node tests/exemplar.test.js
 node tests/profiles.test.js
 node tests/v3.test.js
+node tests/chatgpt.test.js
 python3 scripts/make_browser_smoke.py
 python3 tests/browser_smoke.py # Chromium / Playwright required
 python3 scripts/build_xpi.py
 ```
 
-Build result: `dist/zotero-review-studio-0.3.1.xpi`. The plugin itself has no npm dependencies.
+Build result: `dist/zotero-review-studio-0.4.0.xpi`. The plugin itself has no npm dependencies.
 
 ## Install & updates
 
-1. Download `zotero-review-studio-0.3.1.xpi` from the [latest GitHub Release](https://github.com/seifer08ms/zotero-review-studio/releases/latest).
+1. Download `zotero-review-studio-0.4.0.xpi` from the [latest GitHub Release](https://github.com/seifer08ms/zotero-review-studio/releases/latest).
 2. Zotero 7 → Tools → Plugins → gear → **Install Plugin From File**; choose the XPI and restart Zotero if prompted.
 3. The XPI includes a Zotero `update_url`. GitHub Releases publish the corresponding `update.json` with a SHA-256 integrity hash, enabling supported automatic update checks.
 

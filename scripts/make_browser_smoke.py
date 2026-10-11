@@ -11,7 +11,7 @@ html=re.sub(r'^<\?xml-stylesheet[^>]+\?>','',html)
 html=re.sub(r'<window\b[^>]*>','<div class="zotero-mock-root">',html,count=1,flags=re.DOTALL)
 html=html.replace('</window>','</div>').replace('html:','')
 html=re.sub(r'<script src="chrome://zoteroreviewstudio/content/([^\"]+)"\s*/>','',html)
-source_order=['review-core.js','review-profiles.js','review-network.js','review-checkpoints.js',
+source_order=['review-core.js','review-profiles.js','review-network.js','review-chatgpt.js','review-dropdown.js','review-checkpoints.js',
   'review-pages.js','review-chapters.js','review-engine.js','review-ui.js']
 js='\n'.join('<script>'+ (base/'addon/content'/n).read_text(encoding='utf-8')+'</script>' for n in source_order)
 page='<!DOCTYPE html><html><head><meta charset="utf-8"><style>'+css+'</style></head><body><script>'+mock+'</script>'+html+js+'</body></html>'

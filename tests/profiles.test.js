@@ -19,10 +19,17 @@ assert.equal(P.effectiveEndpoint(local),'https://proxy.example/v1/chat/completio
 assert.throws(()=>P.effectiveEndpoint({...local,gatewayEndpoint:'http://public.example/v1/chat/completions'}),/HTTPS/);
 assert.throws(()=>P.effectiveEndpoint({...local,gatewayEndpoint:'https://alice:pw@proxy.example/v1/chat/completions'}),/账号或密码/);
 assert.throws(()=>P.effectiveEndpoint({...local,gatewayEndpoint:'https://proxy.example/v1/messages'}),/Chat Completions/);
-assert.equal(P.PRESETS.length,8);
+assert.equal(P.PRESETS.length,9);
+const firstTime=P.load(()=>null);
+assert.equal(firstTime.profiles[0].provider,'chatgpt');
+assert.equal(P.effectiveEndpoint(firstTime.profiles[0]),'https://api.openai.com/v1/responses');
+assert.equal(firstTime.profiles[0].rememberKey,false);
 const configured=P.create('deepseek','DeepSeek Research');
 assert.equal(configured.name,'DeepSeek Research');
 assert.equal(P.preset('deepseek').model,'deepseek-chat');
 const actual=P.load(key=>key==='apiProfiles'?JSON.stringify([configured]):key==='activeAPIProfile'?configured.id:null);
-assert.equal(actual.profiles[0].provider,'deepseek');
+assert.equal(actual.profiles.find(p=>p.id===configured.id).provider,'deepseek');
+assert.equal(actual.activeId,configured.id);
+assert.equal(P.sanitize({id:'legacy-123',endpoint:'https://example.com/v1/chat/completions'}).provider,'openai', 'An older profile without provider must not be silently reclassified as ChatGPT');
+assert(actual.profiles.some(p=>p.provider==='chatgpt'));// Added during upgrade without resetting the existing active API
 console.log('API profiles: presets, migration, gateway, validation, key separation passed');
