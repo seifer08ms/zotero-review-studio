@@ -1,0 +1,58 @@
+name: Build and Test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Run core and regression tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          for test in core runtime exemplar profiles v3 incremental_resume pipeline_equivalence performance; do
+            node "tests/${test}.test.js"
+          done
+
+      - name: Build XPI
+        run: python3 scripts/build_xpi.py
+
+      - name: Check XPI and update manifest
+        run: |
+          python3 scripts/generate_update.py
+          python3 - <<'PY'
+          import json, pathlib, zipfile
+          manifest = json.loads(pathlib.Path('addon/manifest.json').read_text('utf-8'))
+          out = pathlib.Path('dist') / f"zotero-review-studio-{manifest['version']}.xpi"
+          with zipfile.ZipFile(out) as z:
+              assert z.testzip() is None, 'Invalid XPI'
+              assert json.loads(z.read('manifest.json'))['version'] == manifest['version']
+          update = json.loads(pathlib.Path('dist/update.json').read_text('utf-8'))
+          assert manifest['applications']['zotero']['id'] in update['addons']
+          print('XPI and Zotero update manifest validated')
+          PY
+
+      - name: Upload test build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: zotero-review-studio-build
+          path: |
+            dist/*.xpi
+            dist/update.json
+          if-no-files-found: error

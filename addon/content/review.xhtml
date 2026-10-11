@@ -1,0 +1,255 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<?xml-stylesheet type="text/css" href="chrome://zoteroreviewstudio/content/review.css"?>
+<window xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul"
+        xmlns:html="http://www.w3.org/1999/xhtml"
+        title="Zotero Review Studio — 综述与 Gap 工作台"
+        id="zotero-review-studio-window"
+        width="1280" height="860" minwidth="900" minheight="650">
+  <html:div id="app" class="app-root">
+    <html:header class="topbar">
+      <html:div class="brand">
+        <html:div class="brand-icon">R</html:div>
+        <html:div>
+          <html:h1>Review Studio <html:span class="version">v0.3.1</html:span></html:h1>
+          <html:p>多论文证据分析 · Research Gap · 综述初稿</html:p>
+        </html:div>
+      </html:div>
+      <html:div class="top-actions">
+        <html:span id="sourceCount" class="count-label">0 篇纳入</html:span>
+        <html:select id="activeProfileQuick" aria-label="当前模型 API" title="一键切换模型 API"></html:select>
+        <html:button id="settingsBtn" class="btn secondary" type="button">管理 API / 设置</html:button>
+        <html:button id="runBtn" class="btn primary" type="button">① 分析证据与 Gap</html:button>
+        <html:button id="cancelBtn" class="btn danger" type="button" disabled="disabled">停止</html:button>
+      </html:div>
+    </html:header>
+
+    <html:div class="workspace">
+      <html:aside class="sidebar">
+        <html:section class="panel question-panel">
+          <html:div class="section-heading"><html:h2>01 · 研究问题</html:h2></html:div>
+          <html:textarea id="question" rows="5" placeholder="例如：超高分辨率遥感影像中，道路提取方法在跨区域泛化、拓扑一致性与复杂遮挡下还存在哪些共同的 Research Gaps？"></html:textarea>
+          <html:div class="inline-row space-top">
+            <html:label for="templateSelect">综述模板</html:label>
+            <html:select id="templateSelect"></html:select>
+          </html:div>
+          <html:p class="helper">模板仅在<html:strong>生成综述初稿</html:strong>时使用。可先分析 Gap，核对证据后再选择或修改模板。</html:p>
+          <html:button id="templateEditorBtn" class="btn text" type="button">＋ 自定义/管理模板</html:button>
+        </html:section>
+
+        <html:section class="panel sources-panel">
+          <html:div class="section-heading">
+            <html:h2>02 · 纳入分析的论文</html:h2>
+            <html:span id="selectedCount" class="subtle">0 篇</html:span>
+          </html:div>
+          <html:div id="selectedList" class="source-list"><html:p class="empty">从 Zotero 选中论文，或从下方检索并勾选文献。</html:p></html:div>
+        </html:section>
+
+        <html:section class="panel discovery-panel">
+          <html:div class="section-heading"><html:h2>03 · 补充检索（需你确认纳入）</html:h2></html:div>
+          <html:input id="searchTerms" type="text" placeholder="技术名、问题关键词（中英文均可）" />
+          <html:div class="action-pair space-top">
+            <html:button id="localSearchBtn" class="btn secondary" type="button">搜索整个 Zotero 文献库</html:button>
+            <html:button id="onlineSearchBtn" class="btn secondary" type="button">搜索 OpenAlex</html:button>
+            <html:button id="autoDiscoverBtn" class="btn secondary" type="button">一键双源发现</html:button>
+          </html:div>
+          <html:p class="helper">只列出候选文献，不会自动纳入、下载或导入 Zotero。网上文献如果没有本地 PDF，最多只能按摘要分析。</html:p>
+          <html:div id="discoveryStatus" class="subtle"></html:div>
+          <html:div id="suggestionList" class="suggestion-list"></html:div>
+        </html:section>
+        <html:section class="panel exemplar-panel">
+          <html:div class="section-heading"><html:h2>04 · 可选：从范例综述提炼模板</html:h2></html:div>
+          <html:p class="helper">在上方文献列表或下方 Zotero 检索结果中点击“设为范例”，选择一篇已有的综述论文。范例论文只用于学习写作结构，不自动进入新综述的证据池。</html:p>
+          <html:div id="exemplarSelection" class="exemplar-selection">尚未指定范例综述</html:div>
+          <html:button id="extractExemplarBtn" class="btn secondary wide-button" type="button" disabled="disabled">分析范例 PDF → 提炼可编辑模板</html:button>
+          <html:div id="exemplarStatus" class="subtle space-top"></html:div>
+        </html:section>
+
+      </html:aside>
+
+      <html:main class="main-pane">
+        <html:section id="settingsPanel" class="settings-panel hidden">
+          <html:div class="section-heading"><html:h2>模型 API 管理（独立配置，一键切换）</html:h2><html:button id="closeSettings" class="btn text" type="button">关闭</html:button></html:div>
+          <html:div class="api-toolbar">
+            <html:select id="apiProfileSelect" aria-label="已保存的 API 配置"></html:select>
+            <html:button id="addAPIProfile" class="btn secondary" type="button">＋ 新增</html:button>
+            <html:button id="cloneAPIProfile" class="btn secondary" type="button">复制配置</html:button>
+            <html:button id="deleteAPIProfile" class="btn text" type="button">删除</html:button>
+          </html:div>
+          <html:div class="settings-grid">
+            <html:label>配置名称（如：DeepSeek 日常 / OpenAI 高精度）
+              <html:input id="apiProfileName" type="text" maxlength="70" placeholder="为此 API 起一个容易辨认的名字" />
+            </html:label>
+            <html:label>服务商预设
+              <html:select id="apiProvider"></html:select>
+            </html:label>
+            <html:label>OpenAI 兼容 Chat Completions API
+              <html:input id="endpoint" type="url" placeholder="https://api.openai.com/v1/chat/completions"/>
+            </html:label>
+            <html:label>模型名称
+              <html:input id="model" type="text" placeholder="gpt-4.1-mini / deepseek-chat / 本地模型" />
+            </html:label>
+            <html:label>API Key（不同配置相互隔离）
+              <html:input id="apiKey" type="password" autocomplete="off" placeholder="API Key（本地 Ollama 可留空）" />
+            </html:label>
+            <html:label>网络连接方式（此配置独立保存）
+              <html:select id="apiRoute">
+                <html:option value="zotero">默认：跟随 Zotero / 系统代理</html:option>
+                <html:option value="gateway">使用专用 API 中转网关（兼容 Chat Completions）</html:option>
+              </html:select>
+            </html:label>
+            <html:label id="gatewayLabel" class="gateway-field hidden">中转网关的完整 /chat/completions URL
+              <html:input id="gatewayEndpoint" type="url" placeholder="https://trusted-gateway.example/v1/chat/completions" />
+            </html:label>
+            <html:label>此 API 的代理方式（每套配置独立）
+              <html:select id="proxyMode">
+                <html:option value="inherit">不使用独立代理：跟随 Zotero / 系统</html:option>
+                <html:option value="direct">不使用代理：强制直连（绕过系统代理）</html:option>
+                <html:option value="custom">使用本 API 独立 HTTP / SOCKS5 代理</html:option>
+              </html:select>
+            </html:label>
+            <html:label id="proxyTypeLabel" class="proxy-specific hidden">独立代理协议
+              <html:select id="proxyType">
+                <html:option value="http">HTTP 代理（支持 HTTPS CONNECT）</html:option>
+                <html:option value="socks5">SOCKS5 代理</html:option>
+              </html:select>
+            </html:label>
+            <html:label id="proxyHostLabel" class="proxy-specific hidden">独立代理主机（无需 http://）
+              <html:input id="proxyHost" type="text" placeholder="127.0.0.1"/>
+            </html:label>
+            <html:label id="proxyPortLabel" class="proxy-specific hidden">独立代理端口
+              <html:input id="proxyPort" type="number" min="1" max="65535" placeholder="7890"/>
+            </html:label>
+            <html:label id="proxyDNSLabel" class="proxy-specific hidden">SOCKS5 域名解析
+              <html:span class="checkline compact"><html:input id="proxyRemoteDNS" type="checkbox" checked="checked" /> 在代理端解析远程域名</html:span>
+            </html:label>
+            <html:label>请求超时（秒）
+              <html:input id="timeoutSeconds" type="number" min="5" max="300" value="120" />
+            </html:label>
+            <html:label>兼容模式
+              <html:span class="checkline compact"><html:input id="jsonMode" type="checkbox" checked="checked" /> 启用 JSON response_format（失败可回退）</html:span>
+            </html:label>
+            <html:label>输出语言
+              <html:select id="language"><html:option value="zh-CN">中文</html:option><html:option value="en">English</html:option></html:select>
+            </html:label>
+            <html:label>每块提取字符数
+              <html:input id="chunkChars" type="number" min="2000" max="24000" step="1000" value="11000" />
+            </html:label>
+            <html:label>每篇待分析论文的处理字符上限
+              <html:input id="maxCharsPerPaper" type="number" min="5000" max="1000000" step="5000" value="180000" />
+            </html:label>
+            <html:label>范例综述 PDF 的处理字符上限（超限时取开头和末尾，并标明覆盖率）
+              <html:input id="maxTemplateChars" type="number" min="16000" max="1000000" step="10000" value="280000" />
+            </html:label>
+          </html:div>
+          <html:p id="proxyHelp" class="helper network-help">代理说明：每个 API 可以分别选“跟随 Zotero”、“强制直连”，或填写该 API 专属的 HTTP / SOCKS5 代理主机与端口。网络代理通过当前模型请求的 Gecko 通道实现，<html:strong>不会修改 Zotero 全局代理设置</html:strong>。另有可选 API 中转网关；网关不是 HTTP/SOCKS 代理，可能接触密钥和论文文本。当前版本不支持需账户密码认证的网络代理。</html:p>
+          <html:label class="checkline"><html:input id="rememberKey" type="checkbox" /> 在本机记住此配置的 API Key（将以明文写入 Zotero preferences；默认不保存）</html:label>
+          <html:div class="action-pair">
+            <html:button id="saveSettings" class="btn primary" type="button">保存当前 API 与通用设置</html:button>
+            <html:button id="testAPI" class="btn secondary" type="button">测试当前 API</html:button>
+          </html:div>
+          <html:div id="settingsStatus" class="setting-status subtle" role="status"></html:div>
+          <html:div class="consent-box">
+            <html:label class="checkline"><html:input id="dataConsent" type="checkbox" /> 我确认：只有点击分析时，才会把选定论文的文本片段发送至<html:strong id="consentProvider">当前 API</html:strong>；使用中转网关时亦会经过该网关</html:label>
+          </html:div>
+        </html:section>
+
+        <html:section id="templatePanel" class="settings-panel hidden">
+          <html:div class="section-heading"><html:h2>自定义综述模板</html:h2><html:button id="closeTemplateEditor" class="btn text" type="button">关闭</html:button></html:div>
+          <html:p class="helper">可以手动编辑，也可以先选择一篇已发表的综述 PDF，逐块分析其章节架构、分类方法和 Gap 论证，再自动生成可编辑模板。保存前你可以修改内容；内置模板不会被覆盖。</html:p>
+          <html:label>模板名称<html:input id="customTemplateName" type="text" placeholder="例如：遥感拓扑结构综述" /></html:label>
+          <html:label>写作结构和要求<html:textarea id="customTemplateInstruction" rows="5" placeholder="请按研究问题、典型方法、结构拓扑局限、数据集偏差、未来研究方案组织；特别关注跨区域泛化和可复现实验。"></html:textarea></html:label>
+          <html:div class="action-pair"><html:button id="saveTemplateBtn" class="btn secondary" type="button">保存自定义模板</html:button><html:button id="deleteTemplateBtn" class="btn text" type="button">删除当前自定义模板</html:button></html:div>
+        </html:section>
+
+        <html:section id="exemplarReportPanel" class="settings-panel hidden">
+          <html:div class="section-heading">
+            <html:h2>范例综述结构分析报告</html:h2>
+            <html:div class="action-pair">
+              <html:button id="editGeneratedTemplateBtn" class="btn secondary" type="button">编辑/保存生成的模板</html:button>
+              <html:button id="closeExemplarReport" class="btn text" type="button">收起</html:button>
+            </html:div>
+          </html:div>
+          <html:p id="exemplarReportQuality" class="helper"></html:p>
+          <html:textarea id="exemplarReportOutput" rows="14" readonly="readonly"></html:textarea>
+        </html:section>
+
+        <html:section class="run-overview" id="runOverview">
+          <html:div class="section-heading"><html:h2>运行前检查</html:h2><html:span id="workflowStage" class="subtle">准备分析</html:span></html:div>
+          <html:div id="runChecklist" class="run-checks"></html:div>
+          <html:p id="runEstimate" class="helper"></html:p>
+        </html:section>
+        <html:section class="run-overview" id="checkpointPanel">
+          <html:div class="section-heading"><html:h2>断点续跑与本地项目</html:h2><html:span id="checkpointStatus" class="subtle">正在检查上次保存的进度…</html:span></html:div>
+          <html:div class="action-pair">
+            <html:button id="restoreCheckpointBtn" class="btn secondary" type="button" disabled="disabled">恢复上次项目与选文献</html:button>
+            <html:button id="resumeCheckpointBtn" class="btn primary" type="button" disabled="disabled">继续未完成分析</html:button>
+            <html:button id="clearCheckpointBtn" class="btn text" type="button" disabled="disabled">删除上次项目缓存</html:button>
+          </html:div>
+          <html:p class="helper">每完成一段证据抽取就本地保存；退出 Zotero 后可恢复。只存结构化证据卡与研究项目，不存 PDF 全文或 API Key。续跑必须使用相同论文、研究问题和提取模型配置。</html:p>
+        </html:section>
+        <html:section class="intro-panel" id="introPanel">
+          <html:div class="stepper"><html:span>选文献</html:span><html:span>逐篇抽证据</html:span><html:span>跨论文归纳 Gap</html:span><html:span>生成综述初稿</html:span></html:div>
+          <html:h2>从论文的真实证据出发，寻找共同的研究空白。</html:h2>
+          <html:p>先选中 Zotero 文献（推荐 3–15 篇），也可先选择一篇已发表的综述从其全文提炼可复用的章节写作模板。库内或 OpenAlex 的补充候选由你决定是否加入。插件先逐篇读取 PDF 全文并按块提取“方法 / 局限 / 未解决问题”，完成后再生成跨论文 Gap 矩阵和综述初稿。</html:p>
+          <html:div class="quality-legend">
+            <html:span>● PDF 全文：可核对原文引述</html:span>
+            <html:span>● 仅摘要：证据范围有限</html:span>
+            <html:span>● Gap 推断：区别于作者明确承认的局限</html:span>
+          </html:div>
+        </html:section>
+
+        <html:section id="progressPanel" class="panel progress-panel hidden">
+          <html:div class="section-heading"><html:h2>分析进度</html:h2><html:span id="runState" class="subtle">准备中</html:span></html:div>
+          <html:progress id="analysisProgress" value="0" max="100"></html:progress>
+          <html:div id="currentStage" class="stage"></html:div>
+          <html:pre id="logBox" class="log"></html:pre>
+        </html:section>
+
+        <html:section id="resultsPanel" class="results-panel hidden">
+          <html:div class="result-tabs">
+            <html:button class="tab current" data-tab="gaps" type="button">跨论文 Gap</html:button>
+            <html:button class="tab" data-tab="evidence" type="button">单篇证据与来源</html:button>
+            <html:button class="tab" data-tab="draft" type="button">综述初稿</html:button>
+          </html:div>
+          <html:div class="stage-actions">
+            <html:span class="subtle">② 确认证据与 Gap 后，再选择模板生成初稿；更换模板不需要重新分析全文。</html:span>
+            <html:button id="generateDraftBtn" class="btn primary" type="button">② 按当前模板生成初稿</html:button>
+          </html:div>
+          <html:div class="action-pair gap-locate-actions">
+            <html:button id="locatePagesBtn" class="btn secondary" type="button">定位 Gap 原文 PDF 文件页码</html:button>
+            <html:span id="pageStatus" class="subtle">仅定位真实可匹配的原文引句；不会猜测期刊印刷页码</html:span>
+          </html:div>
+          <html:div id="gapView" class="result-view"></html:div>
+          <html:div id="evidenceView" class="result-view hidden"></html:div>
+          <html:div id="draftView" class="result-view hidden">
+            <html:div class="section-heading">
+              <html:h2>生成的综述初稿（Markdown，可直接编辑）</html:h2>
+              <html:div class="action-pair">
+                <html:button id="regenerateDraftBtn" class="btn secondary" type="button">用所选模板重新生成</html:button>
+                <html:button id="copyDraftBtn" class="btn secondary" type="button">复制 Markdown</html:button>
+                <html:button id="saveNoteBtn" class="btn primary" type="button">保存为 Zotero 笔记</html:button>
+              </html:div>
+            </html:div>
+            <html:div class="chapter-tools">
+              <html:label for="chapterSelect">只重写某个章节（其他章节保持原样）</html:label>
+              <html:select id="chapterSelect" aria-label="要重新生成的章节"></html:select>
+              <html:button id="regenerateChapterBtn" class="btn secondary" type="button">重新生成所选章节</html:button>
+            </html:div>
+            <html:textarea id="draftOutput" rows="20"></html:textarea>
+            <html:p class="helper">这是初稿：提交论文前，请逐条核对引文和原文。来源不足的 Gap 不应视为确定的研究空白。</html:p>
+          </html:div>
+        </html:section>
+
+        <html:footer class="footnote">本插件不会自动上传你未勾选的论文；范例论文也必须由你单独选择并确认分析。在线检索只传递关键词。全文分析和范例模板提炼都需要你明确同意发送 PDF 文本片段至选定模型接口。• v0.3.0 原型：不等同于系统性综述或 PRISMA 自动筛选。</html:footer>
+      </html:main>
+    </html:div>
+  </html:div>
+  <script src="chrome://zoteroreviewstudio/content/review-core.js"/>
+  <script src="chrome://zoteroreviewstudio/content/review-profiles.js"/>
+  <script src="chrome://zoteroreviewstudio/content/review-network.js"/>
+  <script src="chrome://zoteroreviewstudio/content/review-checkpoints.js"/>
+  <script src="chrome://zoteroreviewstudio/content/review-pages.js"/>
+  <script src="chrome://zoteroreviewstudio/content/review-chapters.js"/>
+  <script src="chrome://zoteroreviewstudio/content/review-engine.js"/>
+  <script src="chrome://zoteroreviewstudio/content/review-ui.js"/>
+</window>
