@@ -6,6 +6,82 @@
 var ReviewNetwork = (function () {
   'use strict';
 
+  // Error pages are useful for diagnosing a bad proxy, but a response body is
+  // untrusted input and can contain credentials echoed by a gateway. Keep the
+  // diagnostic short and redact the common bearer/key forms before it reaches
+  // the settings pane or a thrown error.
+  function redactDiagnostic(value, limit=360) {
+    return String(value||'')
+      .replace(/bearer\s+[^\s"'<>]+/ig,'Bearer [redacted]')
+      .replace(/((?:api[-_ ]?key|access[-_ ]?token|refresh[-_ ]?token|password|secret)\s*[:=]\s*)[^\s,;"'<>]+/ig,'$1[redacted]')
+      .replace(/\b(?:sk|sess|oai)-[A-Za-z0-9_-]{12,}\b/g,'[redacted]')
+      .replace(/[\u0000-\u001f\u007f]+/g,' ')
+      .replace(/\s+/g,' ').trim().slice(0,limit);
+  }
+
+  function plainResponseText(value) {
+    let text=String(value||'');
+    // Proxy block pages are often HTML. Drop executable/style content and
+    // tags while retaining title/body text that identifies the proxy.
+    text=text.replace(/<!--[\s\S]*?-->/g,' ')
+      .replace(/<script\b[^>]*>[\s\S]*?<\/script>/ig,' ')
+      .replace(/<style\b[^>]*>[\s\S]*?<\/style>/ig,' ')
+      .replace(/<[^>]+>/g,' ')
+      .replace(/&(?:nbsp|#160);/ig,' ')
+      .replace(/&amp;/ig,'&').replace(/&lt;/ig,'<').replace(/&gt;/ig,'>')
+      .replace(/&quot;/ig,'"').replace(/&#39;|&apos;/ig,"'");
+    return redactDiagnostic(text);
+  }
+
+  function responseJSONMessage(value) {
+    try {
+      const parsed=JSON.parse(String(value||''));
+      const error=parsed?.error;
+      const candidate=typeof error==='string' ? error
+        : error?.message || parsed?.detail || parsed?.message;
+      if (!candidate) return '';
+      const code=typeof error==='object' && (error.code||error.type);
+      const param=typeof error==='object' && error.param;
+      const suffix=[code,param].filter(Boolean).map(String).join(' / ');
+      return redactDiagnostic(String(candidate)+(suffix?' ['+suffix+']':''));
+    } catch (_) { return ''; }
+  }
+
+  function proxyResponseHint(body,headers={}) {
+    const text=String(body||'');
+    const headerText=Object.entries(headers||{}).map(([key,value])=>key+':'+value).join(' ');
+    // HTML from an explicit proxy, or a well-known forward-proxy signature,
+    // means the 403 did not necessarily come from the configured API.
+    return /<!doctype\s+html|<html\b|<title\b/i.test(text)
+      || /(?:^|[\s,;])(?:squid|tinyproxy|privoxy|clash|mihomo|sing-box|mitmproxy)(?:[\s,;]|$)/i.test(text+' '+headerText)
+      || /(?:^|[\s,;])(?:via|x-cache|x-squid-error)\s*:/i.test(headerText);
+  }
+
+  function formatHTTPError(code,body,headers={},config={}) {
+    const mode=String(config.mode||'inherit');
+    const proxyLabel=mode==='custom'
+      ? '独立 '+(config.type==='socks5'?'SOCKS5':'HTTP')+' 代理'
+      : '代理模式：'+mode;
+    const jsonMessage=responseJSONMessage(body);
+    const text=plainResponseText(body);
+    const proxyLike=proxyResponseHint(body,headers);
+    let message='HTTP '+Number(code||0)+'（'+proxyLabel+'）';
+    if (proxyLike) {
+      const advice=config.type==='socks5'
+        ? '请确认 SOCKS5 协议、主机、端口，以及“在代理端解析远程域名”设置'
+        : '请确认 HTTP 代理主机和端口；访问 HTTPS 目标时代理必须支持 CONNECT';
+      message+='：服务器返回了疑似代理拦截页。'+advice;
+      if (text) message+='；返回摘要：'+text;
+    } else if (jsonMessage) {
+      message+='：'+jsonMessage;
+    } else if (text) {
+      message+='：返回摘要：'+text;
+    }
+    const requestID=headers['x-request-id']||headers['request-id'];
+    if(requestID)message+='；请求 ID：'+redactDiagnostic(requestID,120);
+    return message;
+  }
+
   function proxyConfig(input) {
     const p = input || {};
     const mode = ['inherit', 'direct', 'custom'].includes(p.proxyMode) ? p.proxyMode : 'inherit';
@@ -127,14 +203,31 @@ var ReviewNetwork = (function () {
           const response=new Uint8Array(total);
           let pos=0;for(const chunk of data){response.set(chunk,pos);pos+=chunk.length;}
           const responseText=new TextDecoder('utf-8').decode(response);
-          const code=Number(request.QueryInterface(ci.nsIHttpChannel).responseStatus||0);
+          const httpChannel=request.QueryInterface(ci.nsIHttpChannel);
+          const code=Number(httpChannel.responseStatus||0);
+          const responseHeaders={};
+          // Header access is best-effort: old Zotero/Gecko mocks and some
+          // channel wrappers do not expose visitResponseHeaders. Never fail a
+          // completed request merely because diagnostics are unavailable.
+          try {
+            httpChannel.visitResponseHeaders({
+              visitHeader(name,value){
+                if (/^(set-cookie|proxy-authorization|www-authenticate|authorization)$/i.test(name)) return;
+                responseHeaders[String(name).toLowerCase()]=redactDiagnostic(value,180);
+              },
+            });
+          } catch (_) {}
           if(code<200||code>=300){
-            const error=new Error('HTTP '+code+'（代理模式：'+config.mode+'）');
+            const error=new Error(formatHTTPError(code,responseText,responseHeaders,config));
             error.status=code;
-            error.xmlhttp={status:code,responseText:responseText.slice(0,1200)};
+            // Keep the body available for retry heuristics (for example a
+            // provider rejecting response_format) without retaining a raw
+            // gateway page or an echoed Authorization value on the error.
+            error.xmlhttp={status:code,responseText:redactDiagnostic(responseText,1200),responseHeaders};
+            error.proxyResponse=proxyResponseHint(responseText,responseHeaders);
             return finish(error);
           }
-          finish(null,{responseText,status:code});
+          finish(null,{responseText,status:code,responseHeaders});
         },
         QueryInterface:ChromeUtils.generateQI(['nsIStreamListener','nsIRequestObserver']),
       };
@@ -157,6 +250,6 @@ var ReviewNetwork = (function () {
     }
     return explicitRequest(method,url,options,config);
   }
-  return {proxyConfig,request,explicitRequest,makeProxyInfo};
+  return {proxyConfig,request,explicitRequest,makeProxyInfo,formatHTTPError,redactDiagnostic};
 })();
 if(typeof module!=='undefined'&&module.exports)module.exports=ReviewNetwork;

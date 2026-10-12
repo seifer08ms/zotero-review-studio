@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.5.4
+
+- Explain HTTP 403 responses from per-profile proxies, preserving a redacted response summary and safe response headers so proxy block pages can be distinguished from ChatGPT plan or region permission errors.
+
+
 ## 0.5.3 — fix ChatGPT token exchange and expose provider presets
 
 - Corrects the Gecko upload stream call used by the ChatGPT OAuth token exchange and keeps a compatible fallback for older Zotero builds.

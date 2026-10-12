@@ -286,14 +286,17 @@
       await ReviewChatGPT.signIn(getSettings());
       byId('dataConsent').checked=false;
       const settings=getSettings();
+      let modelWarning='';
       try{
         const models=await ReviewChatGPT.listModels(settings);
         const selected=byId('model').value.trim();
         if(models.length && !models.some(m=>m.id===selected))byId('model').value=models[0].id;
-      }catch(e){byId('settingsStatus').textContent='已登录，但读取模型目录失败：'+e.message;}
+      }catch(e){modelWarning='模型目录读取失败：'+(e.message||e);}
       saveSettings({silent:true});
       showChatGPTFields();
-      byId('settingsStatus').textContent='官方 ChatGPT 登录成功。建议点击“测试当前 API”，再进行全文分析。';
+      byId('settingsStatus').textContent=modelWarning
+        ?'官方 ChatGPT 登录成功，但 '+modelWarning+' 请检查代理设置或账号权限，再点击“测试当前 API”。'
+        :'官方 ChatGPT 登录成功。建议点击“测试当前 API”，再进行全文分析。';
     }catch(e){byId('chatgptAuthStatus').textContent='登录失败：'+(e.message||e);}
     finally{button.disabled=false;updateRunOverview();}
   }
