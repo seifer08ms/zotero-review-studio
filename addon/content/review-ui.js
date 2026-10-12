@@ -17,6 +17,7 @@
     apiProfiles:[],activeAPIId:'',sessionKeys:new Map(),apiTested:new Map(),analysisFingerprint:null,
     latestCheckpoint:null,restoredProjectID:null,draftSaveTimer:null,
     matrix:null,matrixSaveTimer:null,gapSearchBusy:false,
+    progressStartedAt:0,progressLastEventAt:0,progressTimer:null,progressStage:'',progressPercent:0,
 
   };
 
@@ -585,9 +586,56 @@
     byId('logBox').textContent=state.progressLines.join('\n');
     byId('logBox').scrollTop=byId('logBox').scrollHeight;
   }
+  function formatDuration(milliseconds){
+    const seconds=Math.max(0,Math.round(Number(milliseconds||0)/1000));
+    if(seconds<60)return String(seconds)+' 秒';
+    const minutes=Math.floor(seconds/60),rest=seconds%60;
+    if(minutes<60)return String(minutes)+' 分 '+String(rest)+' 秒';
+    return String(Math.floor(minutes/60))+' 小时 '+String(minutes%60)+' 分';
+  }
+  function progressMetaText(now=Date.now()){
+    if(!state.progressStartedAt)return '';
+    const elapsed=now-state.progressStartedAt;
+    const pct=Math.max(0,Math.min(100,Number(state.progressPercent)||0));
+    const idle=state.progressLastEventAt?now-state.progressLastEventAt:0;
+    let estimate='正在等待第一个处理步骤完成';
+    if(pct>=99.5)estimate='即将完成';
+    else if(pct>=1){
+      const total=elapsed*100/pct;
+      estimate='预计还需 '+formatDuration(Math.max(0,total-elapsed));
+    }
+    const wait=idle>=15000
+      ?' · 当前步骤已等待 '+formatDuration(idle)+'，模型仍在返回结果':'';
+    return '已用时 '+formatDuration(elapsed)+' · '+estimate+wait;
+  }
+  function updateProgressMeta(now=Date.now()){
+    const meta=byId('progressMeta');
+    if(meta)meta.textContent=progressMetaText(now);
+    if(state.progressStage && state.progressLastEventAt && now-state.progressLastEventAt>=15000){
+      byId('currentStage').textContent=state.progressStage+' · 模型请求处理中（已等待 '+formatDuration(now-state.progressLastEventAt)+'）';
+    }
+  }
+  function startProgressTicker(){
+    if(state.progressTimer)clearInterval(state.progressTimer);
+    state.progressStartedAt=Date.now();
+    state.progressLastEventAt=state.progressStartedAt;
+    state.progressPercent=0;
+    state.progressStage='';
+    updateProgressMeta();
+    state.progressTimer=setInterval(()=>updateProgressMeta(),1000);
+  }
+  function stopProgressTicker(){
+    if(state.progressTimer){clearInterval(state.progressTimer);state.progressTimer=null;}
+    updateProgressMeta();
+  }
+  function setProgressStage(text){
+    state.progressStage=String(text||'');
+    byId('currentStage').textContent=state.progressStage;
+  }
   function onProgress(event){
     const label=event.paper?.title?.slice(0,70)||'';
     let pct=Number(byId('analysisProgress').value)||0;
+    state.progressLastEventAt=Date.now();
     switch(event.type){
       case 'paper':
         log(`开始论文 ${event.index}/${event.total}：${label}`);
@@ -596,6 +644,9 @@
       case 'chunk':
         log(`  提取证据：第 ${event.chunk}/${event.total} 块`);
         byId('currentStage').textContent=`${label} · 块 ${event.chunk}/${event.total}`;
+        break;
+      case 'chunk-complete':
+        log(`  ✓ 完成证据块：第 ${event.chunk}/${event.total}`);
         break;
       case 'paper-reused':log(`  ✓ 恢复已完成证据卡：${label}`);break;
       case 'incremental-reuse':log(`  ✓ 增量分析复用 ${event.count} 篇已有证据，继续处理新增文献`);break;
@@ -626,8 +677,38 @@
         pct=94;
         break;
     }
+    if(event.type==='paper')setProgressStage(label+' · 准备提取证据');
+    if(event.type==='chunk'||event.type==='chunk-complete'||event.type==='chunk-reused'){
+      const finished=event.type==='chunk'
+        ?null
+        :Math.max(0,Math.min(Number(event.total)||0,Number(event.completed)||0));
+      const stateText=event.type==='chunk'
+        ?'模型请求处理中'
+        :event.type==='chunk-reused'?'已复用证据':'已完成';
+      setProgressStage(label+' · 块 '+event.chunk+'/'+event.total+'（'+stateText+'）');
+      if(event.paperIndex&&event.paperTotal){
+        // A chunk-start event only indicates that a request was launched. Use
+        // completed count for the progress bar so concurrent requests do not
+        // make the run appear nearly finished while all responses are still
+        // pending.
+        if(finished!==null){
+          const paperFraction=finished/Math.max(1,Number(event.total)||1);
+          pct=Math.max(pct,Math.round(70*((event.paperIndex-1)+paperFraction)/event.paperTotal));
+        }
+      }
+    }
+    if(event.type==='paper-reused'){
+      setProgressStage(label+' · 已复用本地证据');
+      if(event.index&&event.total)pct=Math.max(pct,Math.round(70*event.index/event.total));
+    }
+    if(event.type==='paper-reduce')setProgressStage(label+' · 正在形成证据卡');
+    if(event.type==='group')setProgressStage('跨论文证据归纳 · 组 '+event.index+'/'+event.total);
+    if(event.type==='synthesis')setProgressStage('正在合并多个主题组的共同 Gap 和反例');
+    if(event.type==='draft')setProgressStage('跨论文归纳完成，正在生成综述初稿');
     byId('analysisProgress').value=pct;
+    state.progressPercent=pct;
     byId('runState').textContent=event.type==='draft'?'生成初稿':event.type==='group'?'跨论文分析':'正在分析';
+    updateProgressMeta();
   }
 
 
@@ -652,8 +733,9 @@
     byId('progressPanel').classList.remove('hidden');
     byId('introPanel').classList.add('hidden');
     byId('analysisProgress').value=0;
+    startProgressTicker();
     byId('runState').textContent='提炼范例';
-    byId('currentStage').textContent='开始读取范例综述 PDF';
+    setProgressStage('开始读取范例综述 PDF');
     byId('exemplarStatus').textContent='正在读取 PDF 全文、逐块提炼章节组织…';
     try {
       const result=await rt.extractExemplar(exemplar,settings,onProgress);
@@ -669,6 +751,7 @@
       byId('customTemplateInstruction').value=result.template.instruction;
       byId('templatePanel').classList.remove('hidden');
       byId('analysisProgress').value=100;
+      state.progressPercent=100;
       byId('runState').textContent='范例模板待确认';
       byId('exemplarStatus').textContent='结构提炼完成。请审阅右侧结构分析与写作模板，修改后点击“保存自定义模板”。';
       log('范例模板结构分析已完成；等待你审阅、编辑并保存。');
@@ -679,7 +762,7 @@
         byId('exemplarStatus').textContent='提炼失败：'+(e.message||e);
         alert('提炼失败：'+(e.message||e));
       }
-    }finally{setBusy(false)}
+    }finally{stopProgressTicker();setBusy(false)}
   }
 
   async function startAnalysis(resume=false){
@@ -727,12 +810,14 @@
     byId('progressPanel').classList.remove('hidden');
     byId('introPanel').classList.add('hidden');
     byId('analysisProgress').value=0;
-    byId('currentStage').textContent='开始逐篇分析';
+    startProgressTicker();
+    setProgressStage('开始逐篇分析');
     byId('resultsPanel').classList.add('hidden');
     setBusy(true);
     try{
       const jobs=papers.map((p,i)=>({...p,id:'P'+(i+1)}));
       log(`已确认 ${jobs.length} 篇；模型 ${settings.profileName} / ${settings.model}；先提取证据与 Gap，不生成初稿`);
+      log('已启用有限并行：最多同时处理两个模型请求；每个完成的证据块会立即保存，可随时续跑。');
       log('外部来源缺少本地 PDF 时，只能做摘要分析，报告会明确区分');
       const result=await rt.analyzeEvidence(jobs,question,settings,onProgress,
         {resume,previousResult:canReuse?previousResult:null});
@@ -743,6 +828,7 @@
       state.result=result;
       state.analysisFingerprint=currentFingerprint();
       byId('analysisProgress').value=100;
+      state.progressPercent=100;
       log(`证据与 Gap 分析完成：${result.sourceCount} 篇可分析，${result.metadataOnly} 篇缺正文/摘要。可先核对证据，再按模板生成初稿。`);
       byId('runState').textContent='Gap 已完成 · 等待生成初稿';
       showResults(result);
@@ -751,6 +837,7 @@
       else {log('分析中断：'+(e.message||e)); feedback('分析失败');alert('分析失败：'+(e.message||e));}
     } finally{
       try{state.latestCheckpoint=await rt.loadLatestCheckpoint();}catch(e){log('读取缓存失败：'+e.message)}
+      stopProgressTicker();
       setBusy(false);updateRunOverview();
     }
   }
@@ -771,7 +858,9 @@
     setBusy(true);
     byId('progressPanel').classList.remove('hidden');
     byId('analysisProgress').value=92;
-    byId('currentStage').textContent='根据已确认的 Gap 和证据卡生成初稿';
+    startProgressTicker();
+    state.progressPercent=92;
+    setProgressStage('根据已确认的 Gap 和证据卡生成初稿');
     try{
       const result=await rt.generateDraft(state.result,settings,template,onProgress);
       state.result=result;
@@ -780,6 +869,7 @@
       byId('copyDraftBtn').disabled=false;
       byId('saveNoteBtn').disabled=false;
       byId('analysisProgress').value=100;
+      state.progressPercent=100;
       byId('runState').textContent='初稿已生成 · 可编辑';
       log('初稿完成：'+template.name+'（未重新提取 PDF）；可更换模板再次生成。');
       renderGaps(result);
@@ -787,7 +877,7 @@
     }catch(e){
       if(rt.isCancelled()){log('已停止生成初稿；之前的 Gap 与证据仍然保留。');}
       else{log('初稿生成失败：'+(e.message||e));alert('初稿生成失败：'+(e.message||e));}
-    }finally{setBusy(false);updateRunOverview()}
+    }finally{stopProgressTicker();setBusy(false);updateRunOverview()}
   }
 
   function updateChapterChoices(){

@@ -316,12 +316,19 @@ var ReviewChatGPT = (function () {
     return finalText||text;
   }
 
-  async function request(messages,settings={}){
+  async function request(messages,settings={},maxTokens=null){
     const token=await accessToken(settings);
     const instructions=messages.filter(x=>x.role==='system'||x.role==='developer')
       .map(x=>String(x.content||'')).join('\n\n');
     const input=messages.filter(x=>x.role!=='system'&&x.role!=='developer').map(x=>({role:x.role,content:String(x.content||'')}));
     const payload={model:settings.model,input,store:false,stream:true};
+    // Bound the generated response for extraction/reduction calls. The
+    // Responses API counts reasoning and visible output against this cap;
+    // keeping it close to the Chat Completions path prevents an accidentally
+    // unbounded thinking response from making each chunk wait several minutes.
+    const outputLimit=Number(maxTokens);
+    if(Number.isFinite(outputLimit)&&outputLimit>0)
+      payload.max_output_tokens=Math.max(16,Math.min(32768,Math.floor(outputLimit)));
     if(instructions)payload.instructions=instructions;
     const out=await http('POST',RESOURCE+'/responses',{
       timeout:settings.timeoutMs||120000,proxyProfile:settings,

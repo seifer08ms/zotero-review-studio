@@ -53,7 +53,7 @@ textarea {resize:vertical;line-height:1.5;}
 .footnote {border-top:1px solid var(--line);margin-top:25px;padding:12px 0;font-size:10.5px;color:var(--muted);line-height:1.7}
 .hidden {display:none!important}
 .progress-panel {margin:0 0 15px}.progress-panel progress {width:100%;height:11px;accent-color:var(--blue)}
-.stage{color:var(--blue);font-weight:600;margin:10px 0}.log{font-size:11px;line-height:1.6;max-height:195px;overflow:auto;background:var(--bg);color:var(--muted);white-space:pre-wrap;padding:10px;border-radius:7px;margin:0}
+.stage{color:var(--blue);font-weight:600;margin:10px 0}.progress-meta{font-size:11px;color:var(--muted);min-height:18px;margin:-3px 0 8px}.log{font-size:11px;line-height:1.6;max-height:195px;overflow:auto;background:var(--bg);color:var(--muted);white-space:pre-wrap;padding:10px;border-radius:7px;margin:0}
 .result-tabs{display:flex;border-bottom:1px solid var(--line);margin-bottom:16px;gap:5px;}
 .tab{cursor:pointer;font-weight:600;font-size:12px;padding:10px 13px;border:0;border-bottom:2px solid transparent;background:transparent;color:var(--muted)}
 .tab.current{color:var(--blue);border-bottom-color:var(--blue)}
@@ -253,7 +253,7 @@ window.PathUtils={join:(...a)=>a.join('/')};
       <div class="brand">
         <div class="brand-icon">R</div>
         <div>
-          <h1>Review Studio <span class="version">v0.5.4</span></h1>
+          <h1>Review Studio <span class="version">v0.5.5</span></h1>
           <p>多论文证据分析 · Research Gap · 综述初稿</p>
         </div>
       </div>
@@ -456,6 +456,7 @@ window.PathUtils={join:(...a)=>a.join('/')};
           <div class="section-heading"><h2>分析进度</h2><span id="runState" class="subtle">准备中</span></div>
           <progress id="analysisProgress" value="0" max="100"></progress>
           <div id="currentStage" class="stage"></div>
+          <div id="progressMeta" class="progress-meta" aria-live="polite"></div>
           <pre id="logBox" class="log"></pre>
         </section>
 
@@ -2940,6 +2941,55 @@ var ReviewRuntime = (function () {
     }
 
     const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
+
+    // Keep the total number of model requests bounded while allowing
+    // independent paper chunks to make progress together. A single shared
+    // limiter prevents several selected papers from creating an unbounded
+    // burst against the provider.
+    function createRequestLimiter(limit=2) {
+      const max=Math.max(1,Math.min(3,Number(limit)||2));
+      let active=0;
+      const queue=[];
+      const drain=()=>{
+        while(active<max&&queue.length){
+          const job=queue.shift();
+          active++;
+          // Start the task immediately when a slot is available. Besides
+          // reducing one microtask turn per request, this preserves the
+          // in-flight request that was already announced to the progress UI
+          // when the user cancels a run.
+          let result;
+          try{result=job.task();}catch(error){job.reject(error);active--;drain();continue;}
+          Promise.resolve(result).then(job.resolve,job.reject)
+            .finally(()=>{active--;drain();});
+        }
+      };
+      return task=>new Promise((resolve,reject)=>{
+        queue.push({task,resolve,reject});
+        drain();
+      });
+    }
+
+    async function mapLimited(items,limit,worker) {
+      const list=Array.isArray(items)?items:[];
+      const out=new Array(list.length);
+      let next=0;
+      const run=async()=>{
+        while(true){
+          const index=next++;
+          if(index>=list.length)return;
+          out[index]=await worker(list[index],index);
+        }
+      };
+      const count=Math.min(Math.max(1,Number(limit)||1),list.length);
+      // Wait for every active worker before propagating a cancellation or
+      // request error. Otherwise another paper can continue mutating the
+      // shared checkpoint after analyzeEvidence() has already returned.
+      const results=await Promise.allSettled(Array.from({length:count},run));
+      const failure=results.find(result=>result.status==='rejected');
+      if(failure)throw failure.reason;
+      return out;
+    }
     async function ask(settings,messages,format='json',maxTokens=null) {
       if(settings.provider==='chatgpt'){
         if(typeof ReviewChatGPT==='undefined')throw new Error('缺少官方 ChatGPT 登录模块');
@@ -3028,7 +3078,7 @@ var ReviewRuntime = (function () {
       return ReviewCore.safeJSON(text);
     }
 
-    async function analyzeOne(paper,question,settings,progress,resumed=null,persist=async()=>{}) {
+    async function analyzeOne(paper,question,settings,progress,resumed=null,persist=async()=>{},progressMeta={},request=task=>task()) {
       const full=await paperText(paper);
       if(!full.text||full.text.length<40){
         return {paper,sourceQuality:'metadata',coverage:0,chunks:[],summary:null,warning:'缺少可分析的全文或摘要',skipped:true};
@@ -3047,35 +3097,61 @@ var ReviewRuntime = (function () {
         chunks:previous.filter(x=>chunkIDs.has(x.index))
       };
       const completedChunks=new Set(analysis.chunks.map(x=>x.index));
+      const pendingChunks=[];
       for(const chunk of parts.chunks){
-        if(cancelled) throw new Error('用户已取消');
         if(completedChunks.has(chunk.index)){
-          progress({type:'chunk-reused',paper,chunk:chunk.index,total:parts.chunks.length});
+          progress({type:'chunk-reused',paper,chunk:chunk.index,total:parts.chunks.length,
+            completed:completedChunks.size,...progressMeta});
           continue;
         }
-        progress({type:'chunk',paper,chunk:chunk.index,total:parts.chunks.length});
+        pendingChunks.push(chunk);
+      }
+      // Chunk extraction is independent. Requests run through the shared
+      // limiter, while persistence remains serialized by analyzeEvidence.
+      const chunkResults=await Promise.allSettled(pendingChunks.map(async chunk=>{
+        if(cancelled) throw new Error('用户已取消');
         const questionPrompt=ReviewCore.extractionPrompt({
           paperId:paper.id,title:paper.title,quality:full.quality,
           question,chunkIndex:chunk.index,totalChunks:parts.chunks.length,text:chunk.text,
           matrixFields:settings.matrixExtraction === true,
         });
-        let extracted=await askJSON(settings,questionPrompt);
+        const extracted=await request(async()=>{
+          // A request may wait in the shared limiter queue while another
+          // request is finishing. Re-check cancellation when it reaches a
+          // network slot so stopping a run does not start a fresh model call.
+          if(cancelled)throw new Error('用户已取消');
+          progress({type:'chunk',paper,chunk:chunk.index,total:parts.chunks.length,...progressMeta});
+          if(cancelled)throw new Error('用户已取消');
+          return askJSON(settings,questionPrompt);
+        });
         const claims=ReviewCore.cleanClaims(extracted,chunk.text,paper.id,chunk.index,
           {uniqueKinds:settings.matrixExtraction === true});
         analysis.chunks.push({index:chunk.index,claims});
+        analysis.chunks.sort((a,b)=>Number(a.index)-Number(b.index));
         completedChunks.add(chunk.index);
         await persist(analysis,false);
+        // Report completion separately from the start event. With bounded
+        // concurrency several chunks can be in flight at once; using the
+        // chunk number as progress would otherwise jump to the end before any
+        // model response has arrived.
+        progress({type:'chunk-complete',paper,chunk:chunk.index,total:parts.chunks.length,
+          completed:completedChunks.size,...progressMeta});
         // Chunk source text intentionally not retained in application state.
-      }
+      }));
+      const chunkFailure=chunkResults.find(result=>result.status==='rejected');
+      if(chunkFailure)throw chunkFailure.reason;
       if (!analysis.chunks.some(chunk => chunk.claims.some(claim => claim.verified))) {
         return {...analysis, skipped:true, warning:'已提取内容，但没有可在原文中精确匹配的证据引文；不会据此推断 Gap'};
       }
-      progress({type:'paper-reduce',paper});
+      progress({type:'paper-reduce',paper,...progressMeta});
       let data=ReviewCore.compactForPaper({ ...analysis,id:paper.id,title:paper.title},85000);
       // Bounded per-paper reducer; per chunk claims remain independently inspectable.
-      analysis.summary=await askJSON(settings,ReviewCore.paperPrompt({
-        ...analysis,id:paper.id,title:paper.title
-      },{question,data,matrixFields:settings.matrixExtraction === true}));
+      analysis.summary=await request(async()=>{
+        if(cancelled)throw new Error('用户已取消');
+        return askJSON(settings,ReviewCore.paperPrompt({
+          ...analysis,id:paper.id,title:paper.title
+        },{question,data,matrixFields:settings.matrixExtraction === true}));
+      });
       await persist(analysis,true);
       return analysis;
     }
@@ -3126,45 +3202,79 @@ var ReviewRuntime = (function () {
       if(store)await store.save(checkpoint);
       const analyses=Array.isArray(checkpoint.analyses)?checkpoint.analyses:[];
       const indexByPaper=new Map(analyses.map((a,i)=>[a.paper?.id,i]));
-      let idx=0;
-      for(const paper of papers){
+      // Model calls are limited globally. Two papers may be read at once,
+      // while their chunk and reducer requests share the same two slots.
+      const request=createRequestLimiter(settings.requestConcurrency||2);
+      const paperConcurrency=Math.max(1,Math.min(2,Number(settings.paperConcurrency)||2));
+      // All checkpoint writes, including the shared latest-index file, are
+      // serialized. This avoids two parallel papers writing the same .tmp
+      // path while retaining per-chunk resumability.
+      let persistence=Promise.resolve();
+      const enqueuePersistence=task=>{
+        const next=persistence.then(task,task);
+        persistence=next.catch(()=>{});
+        return next;
+      };
+      const processPaper=async(paper,index)=>{
         if(cancelled)throw new Error('用户已取消');
-        idx++;
         const prevIndex=indexByPaper.has(paper.id)?indexByPaper.get(paper.id):-1;
         const previous=prevIndex<0?null:analyses[prevIndex];
         if(previous && (previous.summary || (previous.skipped && !previous.error))){
-          progress({type:'paper-reused',paper,index:idx,total:papers.length});
-          continue;
+          progress({type:'paper-reused',paper,index:index+1,total:papers.length});
+          return;
         }
-        progress({type:'paper',paper,index:idx,total:papers.length});
+        progress({type:'paper',paper,index:index+1,total:papers.length});
         const persist=async (partial,completed=false)=>{
-          const existing=indexByPaper.has(paper.id)?indexByPaper.get(paper.id):-1;
-          if(existing<0){
-            indexByPaper.set(paper.id,analyses.length);
-            analyses.push(partial);
-          }else analyses[existing]=partial;
-          checkpoint.analyses=analyses;
-          checkpoint.status='processing';
-          if(store){
-            if(!completed && typeof store.savePartialAnalysis==='function'){
-              await store.savePartialAnalysis(checkpoint,partial);
-            }else{
-              await store.save(checkpoint,completed?paper.id:null);
+          return enqueuePersistence(async()=>{
+            const existing=indexByPaper.has(paper.id)?indexByPaper.get(paper.id):-1;
+            if(existing<0){
+              indexByPaper.set(paper.id,analyses.length);
+              analyses.push(partial);
+            }else analyses[existing]=partial;
+            checkpoint.analyses=analyses;
+            checkpoint.status='processing';
+            if(store){
+              if(!completed && typeof store.savePartialAnalysis==='function'){
+                await store.savePartialAnalysis(checkpoint,partial);
+              }else{
+                await store.save(checkpoint,completed?paper.id:null);
+              }
             }
-          }
+          });
         };
         try{
-          const result=await analyzeOne(paper,question,settings,progress,previous,persist);
+          const result=await analyzeOne(paper,question,settings,progress,previous,persist,
+            {paperIndex:index+1,paperTotal:papers.length},request);
           // A successful reducer was already persisted in analyzeOne().
           // Skipped papers still need a final checkpoint.
           if(!result.summary)await persist(result,true);
         }catch(e){
           if(cancelled || String(e.message||e).includes('LLM API 请求失败'))throw e;
-          const failed={paper,sourceQuality:'error',coverage:0,skipped:true,error:String(e.message||e),chunks:[],summary:null};
+          // Preserve chunks that finished before a later chunk failed. The
+          // next run can then resume from those checkpoints instead of
+          // discarding the completed evidence and starting the paper over.
+          const existing= indexByPaper.has(paper.id) ? analyses[indexByPaper.get(paper.id)] : null;
+          const failed={
+            ...(existing && existing.paper?.id===paper.id ? existing : {paper}),
+            sourceQuality:existing?.sourceQuality||'error',
+            coverage:Number(existing?.coverage)||0,
+            skipped:true,
+            error:String(e.message||e),
+            chunks:Array.isArray(existing?.chunks)?existing.chunks:[],
+            summary:null,
+          };
           await persist(failed,true);
           progress({type:'paper-error',paper,error:String(e.message||e)});
         }
-      }
+      };
+      let paperError=null;
+      try{
+        await mapLimited(papers,paperConcurrency,processPaper);
+      }catch(error){paperError=error;}
+      // A fatal request error may reject the worker pool while another paper
+      // is finishing a checkpoint. Wait for that write before propagating it.
+      await persistence;
+      if(paperError)throw paperError;
       const valid=analyses.filter(a=>!a.skipped&&a.summary);
       if(!valid.length)throw new Error('没有成功抽取的论文：请检查 API、PDF 全文或摘要是否存在');
       const summaries=valid.map(a=>({
@@ -3424,6 +3534,7 @@ ${JSON.stringify(cards).slice(0,80000)}
     apiProfiles:[],activeAPIId:'',sessionKeys:new Map(),apiTested:new Map(),analysisFingerprint:null,
     latestCheckpoint:null,restoredProjectID:null,draftSaveTimer:null,
     matrix:null,matrixSaveTimer:null,gapSearchBusy:false,
+    progressStartedAt:0,progressLastEventAt:0,progressTimer:null,progressStage:'',progressPercent:0,
 
   };
 
@@ -3992,9 +4103,56 @@ ${JSON.stringify(cards).slice(0,80000)}
     byId('logBox').textContent=state.progressLines.join('\n');
     byId('logBox').scrollTop=byId('logBox').scrollHeight;
   }
+  function formatDuration(milliseconds){
+    const seconds=Math.max(0,Math.round(Number(milliseconds||0)/1000));
+    if(seconds<60)return String(seconds)+' 秒';
+    const minutes=Math.floor(seconds/60),rest=seconds%60;
+    if(minutes<60)return String(minutes)+' 分 '+String(rest)+' 秒';
+    return String(Math.floor(minutes/60))+' 小时 '+String(minutes%60)+' 分';
+  }
+  function progressMetaText(now=Date.now()){
+    if(!state.progressStartedAt)return '';
+    const elapsed=now-state.progressStartedAt;
+    const pct=Math.max(0,Math.min(100,Number(state.progressPercent)||0));
+    const idle=state.progressLastEventAt?now-state.progressLastEventAt:0;
+    let estimate='正在等待第一个处理步骤完成';
+    if(pct>=99.5)estimate='即将完成';
+    else if(pct>=1){
+      const total=elapsed*100/pct;
+      estimate='预计还需 '+formatDuration(Math.max(0,total-elapsed));
+    }
+    const wait=idle>=15000
+      ?' · 当前步骤已等待 '+formatDuration(idle)+'，模型仍在返回结果':'';
+    return '已用时 '+formatDuration(elapsed)+' · '+estimate+wait;
+  }
+  function updateProgressMeta(now=Date.now()){
+    const meta=byId('progressMeta');
+    if(meta)meta.textContent=progressMetaText(now);
+    if(state.progressStage && state.progressLastEventAt && now-state.progressLastEventAt>=15000){
+      byId('currentStage').textContent=state.progressStage+' · 模型请求处理中（已等待 '+formatDuration(now-state.progressLastEventAt)+'）';
+    }
+  }
+  function startProgressTicker(){
+    if(state.progressTimer)clearInterval(state.progressTimer);
+    state.progressStartedAt=Date.now();
+    state.progressLastEventAt=state.progressStartedAt;
+    state.progressPercent=0;
+    state.progressStage='';
+    updateProgressMeta();
+    state.progressTimer=setInterval(()=>updateProgressMeta(),1000);
+  }
+  function stopProgressTicker(){
+    if(state.progressTimer){clearInterval(state.progressTimer);state.progressTimer=null;}
+    updateProgressMeta();
+  }
+  function setProgressStage(text){
+    state.progressStage=String(text||'');
+    byId('currentStage').textContent=state.progressStage;
+  }
   function onProgress(event){
     const label=event.paper?.title?.slice(0,70)||'';
     let pct=Number(byId('analysisProgress').value)||0;
+    state.progressLastEventAt=Date.now();
     switch(event.type){
       case 'paper':
         log(`开始论文 ${event.index}/${event.total}：${label}`);
@@ -4003,6 +4161,9 @@ ${JSON.stringify(cards).slice(0,80000)}
       case 'chunk':
         log(`  提取证据：第 ${event.chunk}/${event.total} 块`);
         byId('currentStage').textContent=`${label} · 块 ${event.chunk}/${event.total}`;
+        break;
+      case 'chunk-complete':
+        log(`  ✓ 完成证据块：第 ${event.chunk}/${event.total}`);
         break;
       case 'paper-reused':log(`  ✓ 恢复已完成证据卡：${label}`);break;
       case 'incremental-reuse':log(`  ✓ 增量分析复用 ${event.count} 篇已有证据，继续处理新增文献`);break;
@@ -4033,8 +4194,38 @@ ${JSON.stringify(cards).slice(0,80000)}
         pct=94;
         break;
     }
+    if(event.type==='paper')setProgressStage(label+' · 准备提取证据');
+    if(event.type==='chunk'||event.type==='chunk-complete'||event.type==='chunk-reused'){
+      const finished=event.type==='chunk'
+        ?null
+        :Math.max(0,Math.min(Number(event.total)||0,Number(event.completed)||0));
+      const stateText=event.type==='chunk'
+        ?'模型请求处理中'
+        :event.type==='chunk-reused'?'已复用证据':'已完成';
+      setProgressStage(label+' · 块 '+event.chunk+'/'+event.total+'（'+stateText+'）');
+      if(event.paperIndex&&event.paperTotal){
+        // A chunk-start event only indicates that a request was launched. Use
+        // completed count for the progress bar so concurrent requests do not
+        // make the run appear nearly finished while all responses are still
+        // pending.
+        if(finished!==null){
+          const paperFraction=finished/Math.max(1,Number(event.total)||1);
+          pct=Math.max(pct,Math.round(70*((event.paperIndex-1)+paperFraction)/event.paperTotal));
+        }
+      }
+    }
+    if(event.type==='paper-reused'){
+      setProgressStage(label+' · 已复用本地证据');
+      if(event.index&&event.total)pct=Math.max(pct,Math.round(70*event.index/event.total));
+    }
+    if(event.type==='paper-reduce')setProgressStage(label+' · 正在形成证据卡');
+    if(event.type==='group')setProgressStage('跨论文证据归纳 · 组 '+event.index+'/'+event.total);
+    if(event.type==='synthesis')setProgressStage('正在合并多个主题组的共同 Gap 和反例');
+    if(event.type==='draft')setProgressStage('跨论文归纳完成，正在生成综述初稿');
     byId('analysisProgress').value=pct;
+    state.progressPercent=pct;
     byId('runState').textContent=event.type==='draft'?'生成初稿':event.type==='group'?'跨论文分析':'正在分析';
+    updateProgressMeta();
   }
 
 
@@ -4059,8 +4250,9 @@ ${JSON.stringify(cards).slice(0,80000)}
     byId('progressPanel').classList.remove('hidden');
     byId('introPanel').classList.add('hidden');
     byId('analysisProgress').value=0;
+    startProgressTicker();
     byId('runState').textContent='提炼范例';
-    byId('currentStage').textContent='开始读取范例综述 PDF';
+    setProgressStage('开始读取范例综述 PDF');
     byId('exemplarStatus').textContent='正在读取 PDF 全文、逐块提炼章节组织…';
     try {
       const result=await rt.extractExemplar(exemplar,settings,onProgress);
@@ -4076,6 +4268,7 @@ ${JSON.stringify(cards).slice(0,80000)}
       byId('customTemplateInstruction').value=result.template.instruction;
       byId('templatePanel').classList.remove('hidden');
       byId('analysisProgress').value=100;
+      state.progressPercent=100;
       byId('runState').textContent='范例模板待确认';
       byId('exemplarStatus').textContent='结构提炼完成。请审阅右侧结构分析与写作模板，修改后点击“保存自定义模板”。';
       log('范例模板结构分析已完成；等待你审阅、编辑并保存。');
@@ -4086,7 +4279,7 @@ ${JSON.stringify(cards).slice(0,80000)}
         byId('exemplarStatus').textContent='提炼失败：'+(e.message||e);
         alert('提炼失败：'+(e.message||e));
       }
-    }finally{setBusy(false)}
+    }finally{stopProgressTicker();setBusy(false)}
   }
 
   async function startAnalysis(resume=false){
@@ -4134,12 +4327,14 @@ ${JSON.stringify(cards).slice(0,80000)}
     byId('progressPanel').classList.remove('hidden');
     byId('introPanel').classList.add('hidden');
     byId('analysisProgress').value=0;
-    byId('currentStage').textContent='开始逐篇分析';
+    startProgressTicker();
+    setProgressStage('开始逐篇分析');
     byId('resultsPanel').classList.add('hidden');
     setBusy(true);
     try{
       const jobs=papers.map((p,i)=>({...p,id:'P'+(i+1)}));
       log(`已确认 ${jobs.length} 篇；模型 ${settings.profileName} / ${settings.model}；先提取证据与 Gap，不生成初稿`);
+      log('已启用有限并行：最多同时处理两个模型请求；每个完成的证据块会立即保存，可随时续跑。');
       log('外部来源缺少本地 PDF 时，只能做摘要分析，报告会明确区分');
       const result=await rt.analyzeEvidence(jobs,question,settings,onProgress,
         {resume,previousResult:canReuse?previousResult:null});
@@ -4150,6 +4345,7 @@ ${JSON.stringify(cards).slice(0,80000)}
       state.result=result;
       state.analysisFingerprint=currentFingerprint();
       byId('analysisProgress').value=100;
+      state.progressPercent=100;
       log(`证据与 Gap 分析完成：${result.sourceCount} 篇可分析，${result.metadataOnly} 篇缺正文/摘要。可先核对证据，再按模板生成初稿。`);
       byId('runState').textContent='Gap 已完成 · 等待生成初稿';
       showResults(result);
@@ -4158,6 +4354,7 @@ ${JSON.stringify(cards).slice(0,80000)}
       else {log('分析中断：'+(e.message||e)); feedback('分析失败');alert('分析失败：'+(e.message||e));}
     } finally{
       try{state.latestCheckpoint=await rt.loadLatestCheckpoint();}catch(e){log('读取缓存失败：'+e.message)}
+      stopProgressTicker();
       setBusy(false);updateRunOverview();
     }
   }
@@ -4178,7 +4375,9 @@ ${JSON.stringify(cards).slice(0,80000)}
     setBusy(true);
     byId('progressPanel').classList.remove('hidden');
     byId('analysisProgress').value=92;
-    byId('currentStage').textContent='根据已确认的 Gap 和证据卡生成初稿';
+    startProgressTicker();
+    state.progressPercent=92;
+    setProgressStage('根据已确认的 Gap 和证据卡生成初稿');
     try{
       const result=await rt.generateDraft(state.result,settings,template,onProgress);
       state.result=result;
@@ -4187,6 +4386,7 @@ ${JSON.stringify(cards).slice(0,80000)}
       byId('copyDraftBtn').disabled=false;
       byId('saveNoteBtn').disabled=false;
       byId('analysisProgress').value=100;
+      state.progressPercent=100;
       byId('runState').textContent='初稿已生成 · 可编辑';
       log('初稿完成：'+template.name+'（未重新提取 PDF）；可更换模板再次生成。');
       renderGaps(result);
@@ -4194,7 +4394,7 @@ ${JSON.stringify(cards).slice(0,80000)}
     }catch(e){
       if(rt.isCancelled()){log('已停止生成初稿；之前的 Gap 与证据仍然保留。');}
       else{log('初稿生成失败：'+(e.message||e));alert('初稿生成失败：'+(e.message||e));}
-    }finally{setBusy(false);updateRunOverview()}
+    }finally{stopProgressTicker();setBusy(false);updateRunOverview()}
   }
 
   function updateChapterChoices(){

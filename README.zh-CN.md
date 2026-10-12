@@ -1,4 +1,11 @@
-# Zotero Review Studio v0.5.4（Zotero 7 综述研究工作台）
+# Zotero Review Studio v0.5.5（Zotero 7 综述研究工作台）
+
+## v0.5.5：加速批量分析并显示真实进度
+
+- PDF 证据块使用全局最多两个模型请求并发处理，论文之间也允许有限并行；写入断点时保持串行，避免缓存冲突。
+- 当前进度只在证据块完成并保存后推进，新增已用时间、模型等待状态和预计剩余时间。
+- 某个请求失败时保留已经完成的证据块，重新运行可以继续断点分析。
+- ChatGPT Responses 的证据提取和归纳请求设置输出上限，避免推理内容无界增长导致单块长时间等待。
 
 ## v0.5.4：诊断独立代理的 ChatGPT 403
 
@@ -145,7 +152,7 @@ python3 tests/browser_smoke.py  # 需要 Playwright + Chromium
 python3 scripts/build_xpi.py
 ```
 
-XPI 输出位于 `dist/zotero-review-studio-0.5.4.xpi`。无需 npm 安装。
+XPI 输出位于 `dist/zotero-review-studio-0.5.5.xpi`。无需 npm 安装。
 
 MIT License.
 

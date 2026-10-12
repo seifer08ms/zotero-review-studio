@@ -253,13 +253,63 @@ var ReviewRuntime = (function () {
     }
 
     const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
+
+    // Keep the total number of model requests bounded while allowing
+    // independent paper chunks to make progress together. A single shared
+    // limiter prevents several selected papers from creating an unbounded
+    // burst against the provider.
+    function createRequestLimiter(limit=2) {
+      const max=Math.max(1,Math.min(3,Number(limit)||2));
+      let active=0;
+      const queue=[];
+      const drain=()=>{
+        while(active<max&&queue.length){
+          const job=queue.shift();
+          active++;
+          // Start the task immediately when a slot is available. Besides
+          // reducing one microtask turn per request, this preserves the
+          // in-flight request that was already announced to the progress UI
+          // when the user cancels a run.
+          let result;
+          try{result=job.task();}catch(error){job.reject(error);active--;drain();continue;}
+          Promise.resolve(result).then(job.resolve,job.reject)
+            .finally(()=>{active--;drain();});
+        }
+      };
+      return task=>new Promise((resolve,reject)=>{
+        queue.push({task,resolve,reject});
+        drain();
+      });
+    }
+
+    async function mapLimited(items,limit,worker) {
+      const list=Array.isArray(items)?items:[];
+      const out=new Array(list.length);
+      let next=0;
+      const run=async()=>{
+        while(true){
+          const index=next++;
+          if(index>=list.length)return;
+          out[index]=await worker(list[index],index);
+        }
+      };
+      const count=Math.min(Math.max(1,Number(limit)||1),list.length);
+      // Wait for every active worker before propagating a cancellation or
+      // request error. Otherwise another paper can continue mutating the
+      // shared checkpoint after analyzeEvidence() has already returned.
+      const results=await Promise.allSettled(Array.from({length:count},run));
+      const failure=results.find(result=>result.status==='rejected');
+      if(failure)throw failure.reason;
+      return out;
+    }
     async function ask(settings,messages,format='json',maxTokens=null) {
       if(settings.provider==='chatgpt'){
         if(typeof ReviewChatGPT==='undefined')throw new Error('缺少官方 ChatGPT 登录模块');
         let last;
         for(let attempt=0;attempt<4;attempt++){
           if(cancelled)throw new Error('用户已取消');
-          try{return await ReviewChatGPT.request(messages,settings);}
+          const tokenLimit=Number(maxTokens)||(format==='json'?1800:4600);
+          try{return await ReviewChatGPT.request(messages,settings,tokenLimit);}
           catch(e){
             last=e;
             const status=Number(e?.status||e?.xmlhttp?.status||0);
@@ -341,7 +391,7 @@ var ReviewRuntime = (function () {
       return ReviewCore.safeJSON(text);
     }
 
-    async function analyzeOne(paper,question,settings,progress,resumed=null,persist=async()=>{}) {
+    async function analyzeOne(paper,question,settings,progress,resumed=null,persist=async()=>{},progressMeta={},request=task=>task()) {
       const full=await paperText(paper);
       if(!full.text||full.text.length<40){
         return {paper,sourceQuality:'metadata',coverage:0,chunks:[],summary:null,warning:'缺少可分析的全文或摘要',skipped:true};
@@ -360,35 +410,61 @@ var ReviewRuntime = (function () {
         chunks:previous.filter(x=>chunkIDs.has(x.index))
       };
       const completedChunks=new Set(analysis.chunks.map(x=>x.index));
+      const pendingChunks=[];
       for(const chunk of parts.chunks){
-        if(cancelled) throw new Error('用户已取消');
         if(completedChunks.has(chunk.index)){
-          progress({type:'chunk-reused',paper,chunk:chunk.index,total:parts.chunks.length});
+          progress({type:'chunk-reused',paper,chunk:chunk.index,total:parts.chunks.length,
+            completed:completedChunks.size,...progressMeta});
           continue;
         }
-        progress({type:'chunk',paper,chunk:chunk.index,total:parts.chunks.length});
+        pendingChunks.push(chunk);
+      }
+      // Chunk extraction is independent. Requests run through the shared
+      // limiter, while persistence remains serialized by analyzeEvidence.
+      const chunkResults=await Promise.allSettled(pendingChunks.map(async chunk=>{
+        if(cancelled) throw new Error('用户已取消');
         const questionPrompt=ReviewCore.extractionPrompt({
           paperId:paper.id,title:paper.title,quality:full.quality,
           question,chunkIndex:chunk.index,totalChunks:parts.chunks.length,text:chunk.text,
           matrixFields:settings.matrixExtraction === true,
         });
-        let extracted=await askJSON(settings,questionPrompt);
+        const extracted=await request(async()=>{
+          // A request may wait in the shared limiter queue while another
+          // request is finishing. Re-check cancellation when it reaches a
+          // network slot so stopping a run does not start a fresh model call.
+          if(cancelled)throw new Error('用户已取消');
+          progress({type:'chunk',paper,chunk:chunk.index,total:parts.chunks.length,...progressMeta});
+          if(cancelled)throw new Error('用户已取消');
+          return askJSON(settings,questionPrompt);
+        });
         const claims=ReviewCore.cleanClaims(extracted,chunk.text,paper.id,chunk.index,
           {uniqueKinds:settings.matrixExtraction === true});
         analysis.chunks.push({index:chunk.index,claims});
+        analysis.chunks.sort((a,b)=>Number(a.index)-Number(b.index));
         completedChunks.add(chunk.index);
         await persist(analysis,false);
+        // Report completion separately from the start event. With bounded
+        // concurrency several chunks can be in flight at once; using the
+        // chunk number as progress would otherwise jump to the end before any
+        // model response has arrived.
+        progress({type:'chunk-complete',paper,chunk:chunk.index,total:parts.chunks.length,
+          completed:completedChunks.size,...progressMeta});
         // Chunk source text intentionally not retained in application state.
-      }
+      }));
+      const chunkFailure=chunkResults.find(result=>result.status==='rejected');
+      if(chunkFailure)throw chunkFailure.reason;
       if (!analysis.chunks.some(chunk => chunk.claims.some(claim => claim.verified))) {
         return {...analysis, skipped:true, warning:'已提取内容，但没有可在原文中精确匹配的证据引文；不会据此推断 Gap'};
       }
-      progress({type:'paper-reduce',paper});
+      progress({type:'paper-reduce',paper,...progressMeta});
       let data=ReviewCore.compactForPaper({ ...analysis,id:paper.id,title:paper.title},85000);
       // Bounded per-paper reducer; per chunk claims remain independently inspectable.
-      analysis.summary=await askJSON(settings,ReviewCore.paperPrompt({
-        ...analysis,id:paper.id,title:paper.title
-      },{question,data,matrixFields:settings.matrixExtraction === true}));
+      analysis.summary=await request(async()=>{
+        if(cancelled)throw new Error('用户已取消');
+        return askJSON(settings,ReviewCore.paperPrompt({
+          ...analysis,id:paper.id,title:paper.title
+        },{question,data,matrixFields:settings.matrixExtraction === true}));
+      });
       await persist(analysis,true);
       return analysis;
     }
@@ -439,45 +515,79 @@ var ReviewRuntime = (function () {
       if(store)await store.save(checkpoint);
       const analyses=Array.isArray(checkpoint.analyses)?checkpoint.analyses:[];
       const indexByPaper=new Map(analyses.map((a,i)=>[a.paper?.id,i]));
-      let idx=0;
-      for(const paper of papers){
+      // Model calls are limited globally. Two papers may be read at once,
+      // while their chunk and reducer requests share the same two slots.
+      const request=createRequestLimiter(settings.requestConcurrency||2);
+      const paperConcurrency=Math.max(1,Math.min(2,Number(settings.paperConcurrency)||2));
+      // All checkpoint writes, including the shared latest-index file, are
+      // serialized. This avoids two parallel papers writing the same .tmp
+      // path while retaining per-chunk resumability.
+      let persistence=Promise.resolve();
+      const enqueuePersistence=task=>{
+        const next=persistence.then(task,task);
+        persistence=next.catch(()=>{});
+        return next;
+      };
+      const processPaper=async(paper,index)=>{
         if(cancelled)throw new Error('用户已取消');
-        idx++;
         const prevIndex=indexByPaper.has(paper.id)?indexByPaper.get(paper.id):-1;
         const previous=prevIndex<0?null:analyses[prevIndex];
         if(previous && (previous.summary || (previous.skipped && !previous.error))){
-          progress({type:'paper-reused',paper,index:idx,total:papers.length});
-          continue;
+          progress({type:'paper-reused',paper,index:index+1,total:papers.length});
+          return;
         }
-        progress({type:'paper',paper,index:idx,total:papers.length});
+        progress({type:'paper',paper,index:index+1,total:papers.length});
         const persist=async (partial,completed=false)=>{
-          const existing=indexByPaper.has(paper.id)?indexByPaper.get(paper.id):-1;
-          if(existing<0){
-            indexByPaper.set(paper.id,analyses.length);
-            analyses.push(partial);
-          }else analyses[existing]=partial;
-          checkpoint.analyses=analyses;
-          checkpoint.status='processing';
-          if(store){
-            if(!completed && typeof store.savePartialAnalysis==='function'){
-              await store.savePartialAnalysis(checkpoint,partial);
-            }else{
-              await store.save(checkpoint,completed?paper.id:null);
+          return enqueuePersistence(async()=>{
+            const existing=indexByPaper.has(paper.id)?indexByPaper.get(paper.id):-1;
+            if(existing<0){
+              indexByPaper.set(paper.id,analyses.length);
+              analyses.push(partial);
+            }else analyses[existing]=partial;
+            checkpoint.analyses=analyses;
+            checkpoint.status='processing';
+            if(store){
+              if(!completed && typeof store.savePartialAnalysis==='function'){
+                await store.savePartialAnalysis(checkpoint,partial);
+              }else{
+                await store.save(checkpoint,completed?paper.id:null);
+              }
             }
-          }
+          });
         };
         try{
-          const result=await analyzeOne(paper,question,settings,progress,previous,persist);
+          const result=await analyzeOne(paper,question,settings,progress,previous,persist,
+            {paperIndex:index+1,paperTotal:papers.length},request);
           // A successful reducer was already persisted in analyzeOne().
           // Skipped papers still need a final checkpoint.
           if(!result.summary)await persist(result,true);
         }catch(e){
           if(cancelled || String(e.message||e).includes('LLM API 请求失败'))throw e;
-          const failed={paper,sourceQuality:'error',coverage:0,skipped:true,error:String(e.message||e),chunks:[],summary:null};
+          // Preserve chunks that finished before a later chunk failed. The
+          // next run can then resume from those checkpoints instead of
+          // discarding the completed evidence and starting the paper over.
+          const existing= indexByPaper.has(paper.id) ? analyses[indexByPaper.get(paper.id)] : null;
+          const failed={
+            ...(existing && existing.paper?.id===paper.id ? existing : {paper}),
+            sourceQuality:existing?.sourceQuality||'error',
+            coverage:Number(existing?.coverage)||0,
+            skipped:true,
+            error:String(e.message||e),
+            chunks:Array.isArray(existing?.chunks)?existing.chunks:[],
+            summary:null,
+          };
           await persist(failed,true);
           progress({type:'paper-error',paper,error:String(e.message||e)});
         }
-      }
+      };
+      let paperError=null;
+      try{
+        await mapLimited(papers,paperConcurrency,processPaper);
+      }catch(error){paperError=error;}
+      // A fatal request error may reject the worker pool while another paper
+      // is finishing a checkpoint. Wait for that write before propagating it.
+      await persistence;
+      if(paperError)throw paperError;
       const valid=analyses.filter(a=>!a.skipped&&a.summary);
       if(!valid.length)throw new Error('没有成功抽取的论文：请检查 API、PDF 全文或摘要是否存在');
       const summaries=valid.map(a=>({

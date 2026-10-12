@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.5.5
+
+- Runs independent PDF evidence requests with a bounded global concurrency of two, while serializing checkpoint writes so completed chunks remain resumable.
+- Preserves completed chunks when a later request fails, avoiding unnecessary re-analysis after an interrupted run.
+- Adds elapsed time, waiting status and estimated remaining time to the analysis panel; progress advances only after a chunk is saved.
+- Bounds ChatGPT Responses output for extraction and reduction calls so reasoning responses cannot grow without limit.
+
 ## 0.5.4
 
 - Explain HTTP 403 responses from per-profile proxies, preserving a redacted response summary and safe response headers so proxy block pages can be distinguished from ChatGPT plan or region permission errors.
