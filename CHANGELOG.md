@@ -10,6 +10,7 @@
 - Lets researchers edit a Gap claim in place; edited claims return to pending review before they can be accepted again.
 - Adds per-gap reverse search across the Zotero library and OpenAlex, retaining candidate papers as review leads rather than treating search results as evidence.
 - Keeps proceedings and preprints in OpenAlex candidate discovery and preserves resumable checkpoints, official ChatGPT sign-in, per-profile proxy settings and exemplar templates.
+- Automatic matrix method and limitation cells use only quote-verified claims; reducer-only summary text remains available for manual checking instead of being presented as direct evidence.
 
 ## 0.4.0 — ChatGPT-plan OAuth and stable in-dialog selectors
 

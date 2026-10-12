@@ -7,6 +7,8 @@
 - 每条潜在 Research Gap 都有待审核、接受和否决状态；只有用户接受且逐条引句和论文归属核验完整的 Gap 才会进入综述初稿和章节重写。
 - 可以直接修改 Gap 论断；修改后会自动恢复为待审核，避免把旧的接受决定带到新的科学表述上。
 - 可对单条 Gap 反向检索 Zotero 库与 OpenAlex，寻找可能已经解决该问题的候选研究；候选结果仍需人工纳入和全文分析。
+- 增量复用针对在当前选文末尾追加新论文优化；如果改变选文顺序，插件会安全地重新分析，避免静默重分配 evidence ID。
+- 当前初稿仍使用可追溯的 `[P1]` 内部编号；Gap 证据按钮用于定位原文，不会把 Zotero citation key 自动插入 Word 或 LaTeX，这部分留待后续版本。
 
 [![Build and Test](https://github.com/seifer08ms/zotero-review-studio/actions/workflows/build.yml/badge.svg)](https://github.com/seifer08ms/zotero-review-studio/actions/workflows/build.yml)
 [![最新版本](https://img.shields.io/github/v/release/seifer08ms/zotero-review-studio)](https://github.com/seifer08ms/zotero-review-studio/releases/latest)

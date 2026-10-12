@@ -13,6 +13,8 @@
 - Review each potential Research Gap as pending, accepted or rejected. Only an accepted Gap with a complete quote-to-paper evidence chain is sent to draft generation.
 - Edit a Gap's wording in the review card; a changed claim automatically returns to pending review so the evidence decision is made against the revised statement.
 - Run a reverse search against the Zotero library and OpenAlex to find candidate studies that may already address a proposed Gap.
+- Incremental reuse is optimized for appending new papers to the current selection; changing the order safely triggers a fresh analysis so evidence IDs cannot be reassigned silently.
+- The generated draft still uses traceable internal markers such as `[P1]`; evidence buttons locate source passages and do not insert Zotero citation keys into Word or LaTeX yet.
 
 > This is a beta release. Test with a small number of non-sensitive papers before production use.
 
@@ -71,6 +73,9 @@ node tests/v3.test.js
 node tests/chatgpt.test.js
 node tests/gap-validation.test.js
 node tests/matrix.test.js
+node tests/incremental_resume.test.js
+node tests/pipeline_equivalence.test.js
+node tests/performance.test.js
 python3 scripts/make_browser_smoke.py
 python3 tests/browser_smoke.py # Chromium / Playwright required
 python3 scripts/build_xpi.py

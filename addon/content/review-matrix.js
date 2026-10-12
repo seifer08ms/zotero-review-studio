@@ -91,16 +91,13 @@ var ReviewMatrix = (function () {
     const methodClaims = claims(analysis, ['methods', 'contributions']);
     const limitationClaims = claims(analysis, ['limitations', 'openProblems', 'counterEvidence']);
     if (key === 'method') {
-      return join([
-        ...summaryList(summary, ['methods']),
-        ...methodClaims.map(c => c.claim),
-      ].filter(Boolean).slice(0, 8));
+      // Reducer summaries are useful context, but their individual statements
+      // do not carry a claim-to-quote link. Keep automatic cells grounded in
+      // verified claims and leave unobserved details to editable cells.
+      return join(methodClaims.map(c => c.claim).slice(0, 8));
     }
     if (key === 'limitations') {
-      return join([
-        ...summaryList(summary, ['authorLimitations', 'inferredLimitations', 'unresolvedProblems']),
-        ...limitationClaims.map(c => c.claim),
-      ].filter(Boolean).slice(0, 10));
+      return join(limitationClaims.map(c => c.claim).slice(0, 10));
     }
     if (key === 'evidence') return evidenceText(analysis);
     if (key === 'assumption') {
