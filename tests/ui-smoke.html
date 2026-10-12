@@ -461,7 +461,7 @@ window.PathUtils={join:(...a)=>a.join('/')};
           <div id="gapView" class="result-view"></div>
           <div id="matrixView" class="result-view hidden">
             <div class="section-heading matrix-heading">
-              <div><h2>文献证据对比矩阵</h2><p class="helper">自动字段只取带有逐条原文引句核验的 claims；数据集、指标和定量结果保留为可编辑字段，避免把未观察到的信息当成模型事实。模型归纳的其他摘要仍可在单篇证据卡中核查。</p></div>
+              <div><h2>文献证据对比矩阵</h2><p class="helper">方法、局限和原文证据自动字段只取带有逐条引句核验的 claims；数据集、指标和定量结果是从论文明确报告字段提取的可编辑候选，仍需人工核查。模型归纳的其他摘要可在单篇证据卡中复核。</p></div>
               <div class="matrix-actions">
                 <button id="refreshMatrixBtn" class="btn secondary" type="button">更新矩阵</button>
                 <button id="clearMatrixEditsBtn" class="btn text" type="button">清除手工修改</button>
