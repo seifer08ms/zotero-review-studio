@@ -1,4 +1,9 @@
-# Zotero Review Studio v0.5.0（Zotero 7 综述研究工作台）
+# Zotero Review Studio v0.5.1（Zotero 7 综述研究工作台）
+
+## v0.5.1：修复下拉列表透明背景
+
+- 强制 Zotero XUL 窗口中的自绘下拉浮层和每个选项使用不透明背景，并为深色主题提供对应颜色，避免菜单文字与下面的界面重叠。
+- 浏览器回归检查现在覆盖浮层、选项的背景色、不透明度和层级关系。
 
 ## v0.5.0：证据对比矩阵与 Research Gap 审核
 
@@ -125,7 +130,7 @@ python3 tests/browser_smoke.py  # 需要 Playwright + Chromium
 python3 scripts/build_xpi.py
 ```
 
-XPI 输出位于 `dist/zotero-review-studio-0.5.0.xpi`。无需 npm 安装。
+XPI 输出位于 `dist/zotero-review-studio-0.5.1.xpi`。无需 npm 安装。
 
 MIT License.
 

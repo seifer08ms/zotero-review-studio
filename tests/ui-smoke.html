@@ -177,16 +177,27 @@ details.evidence-paper .evidence-paper-detail { padding-top:9px; }
 .rs-picker-button:disabled {opacity:.50;cursor:default;}
 .rs-dropdown-portal {position:fixed;display:flex;flex-direction:column;box-sizing:border-box;
   z-index:2147483640;max-height:292px;overflow-y:auto;overscroll-behavior:contain;
-  padding:5px;border:1px solid var(--line);border-radius:10px;background:var(--panel);
-  color:var(--ink);box-shadow:0 12px 28px rgba(0,0,0,.23),0 2px 7px rgba(0,0,0,.12);}
+  padding:5px;border:1px solid var(--line,#e4e8f0);border-radius:10px;
+  /* Keep a literal fallback: a XUL document can leave custom properties
+     unresolved on a portal attached to document.documentElement. */
+  background-color:#fff!important;
+  background-image:none!important;opacity:1!important;isolation:isolate;
+  color:var(--ink,#17243c);box-shadow:0 12px 28px rgba(0,0,0,.23),0 2px 7px rgba(0,0,0,.12);}
 .rs-dropdown-portal.hidden {display:none!important;}
 .rs-dropdown-option {display:block;flex:0 0 auto;min-height:34px;width:100%;padding:8px 10px;
-  color:var(--ink);text-align:left;font:inherit;font-size:12px;line-height:1.35;
-  cursor:pointer;border:0;border-radius:6px;background:transparent;white-space:normal;overflow-wrap:anywhere;}
-.rs-dropdown-option:hover:not(:disabled),.rs-dropdown-option:focus-visible {background:var(--pale);outline:none;}
-.rs-dropdown-option.current {color:var(--blue);background:var(--pale);font-weight:700;}
+  color:var(--ink,#17243c);text-align:left;font:inherit;font-size:12px;line-height:1.35;
+  cursor:pointer;border:0;border-radius:6px;background-color:#fff!important;
+  background-image:none!important;opacity:1!important;white-space:normal;overflow-wrap:anywhere;}
+.rs-dropdown-option:hover:not(:disabled),.rs-dropdown-option:focus-visible {background-color:#ecf2ff!important;outline:none;}
+.rs-dropdown-option.current {color:var(--blue,#275dda);background-color:#ecf2ff!important;font-weight:700;}
 .rs-dropdown-option.current:before {content:'✓';margin-right:7px;}
 .rs-dropdown-option:disabled {opacity:.4;cursor:default;}
+@media (prefers-color-scheme: dark) {
+  .rs-dropdown-portal {background-color:#252a33!important;color:#e7edf7;}
+  .rs-dropdown-option {background-color:#252a33!important;color:#e7edf7;}
+  .rs-dropdown-option:hover:not(:disabled),.rs-dropdown-option:focus-visible,
+  .rs-dropdown-option.current {background-color:#27344d!important;}
+}
 #activeProfileQuick {width:200px;max-width:24vw;}
 #activeProfileQuick.rs-native-select {display:none!important;}
 .top-actions>.rs-picker{width:220px;max-width:24vw;flex:0 1 220px;}
@@ -237,7 +248,7 @@ window.PathUtils={join:(...a)=>a.join('/')};
       <div class="brand">
         <div class="brand-icon">R</div>
         <div>
-          <h1>Review Studio <span class="version">v0.5.0</span></h1>
+          <h1>Review Studio <span class="version">v0.5.1</span></h1>
           <p>多论文证据分析 · Research Gap · 综述初稿</p>
         </div>
       </div>
