@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.5.1 — opaque Zotero dropdowns
+
+- Forces an opaque background for the in-dialog dropdown surface and each option in Zotero's XUL environment, with dark-scheme colors and regression checks for transparent rendering.
+
 ## 0.5.0 — evidence comparison matrix and reviewed Research Gaps
 
 - Adds an editable, project-scoped comparison matrix with method, assumptions, datasets, metrics, quantitative results, limitations, verified quotations and PDF file pages.
