@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.5.6
+
+- Remembers the explicit data-transfer acknowledgement for each unchanged model destination, so the consent checkbox does not need to be selected again on every plugin launch.
+- Invalidates remembered consent when the provider, model, endpoint, gateway or proxy route changes; analysis and template-generation actions remain blocked until the new destination is acknowledged.
+- Clarifies that the acknowledgement applies to evidence analysis, exemplar-template extraction and review generation.
+
 ## 0.5.5
 
 - Runs independent PDF evidence requests with a bounded global concurrency of two, while serializing checkpoint writes so completed chunks remain resumable.

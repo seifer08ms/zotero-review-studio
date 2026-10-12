@@ -295,6 +295,7 @@
       }catch(e){modelWarning='模型目录读取失败：'+(e.message||e);}
       saveSettings({silent:true});
       showChatGPTFields();
+      restoreRememberedConsent();
       byId('settingsStatus').textContent=modelWarning
         ?'官方 ChatGPT 登录成功，但 '+modelWarning+' 请检查代理设置或账号权限，再点击“测试当前 API”。'
         :'官方 ChatGPT 登录成功。建议点击“测试当前 API”，再进行全文分析。';
@@ -317,6 +318,7 @@
       if(!choices.length)throw new Error('当前账号没有返回可列出的模型');
       const existing=byId('model').value;
       if(!choices.some(x=>x.id===existing))byId('model').value=choices[0].id;
+      invalidateConsent();
       byId('settingsStatus').textContent='已读取 '+choices.length+' 个模型；当前选择：'+byId('model').value+'。可编辑模型名称。';
       saveSettings({silent:true});
     }catch(e){byId('settingsStatus').textContent='读取模型失败：'+e.message;}
@@ -407,6 +409,7 @@
     state.activeAPIId=loaded.activeId;
     if(loaded.migratedKey)state.sessionKeys.set(loaded.activeId,loaded.migratedKey);
     renderProfile(activeProfile());
+    restoreRememberedConsent();
     updateRunOverview();
   }
   function getSettings() {
@@ -431,6 +434,42 @@
       matrixExtraction:true,
     };
   }
+  // Remember an explicit data-transfer acknowledgement for the current
+  // destination configuration. A changed model, endpoint, route or proxy
+  // invalidates the remembered acknowledgement automatically.
+  function consentSignature(profile) {
+    const p=ReviewProfiles.sanitize(profile||{});
+    return JSON.stringify({
+      provider:p.provider||'',
+      endpoint:ReviewProfiles.effectiveEndpoint(p)||p.endpoint||'',
+      model:p.model||'',
+      route:p.route||'zotero',
+      gatewayEndpoint:p.gatewayEndpoint||'',
+      proxyMode:p.proxyMode||'inherit',
+      proxyType:p.proxyType||'http',
+      proxyHost:p.proxyHost||'',
+      proxyPort:String(p.proxyPort||''),
+      proxyRemoteDNS:p.proxyRemoteDNS!==false,
+    });
+  }
+  function consentPrefKey(profileId){return 'dataConsent.'+String(profileId||state.activeAPIId||'default');}
+  function currentConsentSignature(){return consentSignature(readProfileForm());}
+  function rememberCurrentConsent(){
+    try{rt.setPref(consentPrefKey(activeProfile()?.id),currentConsentSignature());}catch(_){/* run-time validation remains the gate */}
+  }
+  function restoreRememberedConsent(){
+    const box=byId('dataConsent');
+    if(!box)return;
+    try{
+      const saved=String(rt.getPref(consentPrefKey(activeProfile()?.id),'')||'');
+      box.checked=!!saved&&saved===currentConsentSignature();
+    }catch(_){box.checked=false;}
+  }
+  function invalidateConsent(){
+    const box=byId('dataConsent');
+    if(box)box.checked=false;
+    updateRunOverview();
+  }
   function saveSettings(options={}) {
     const silent=options.silent===true;
     const profile=storeProfileDraft();
@@ -453,8 +492,8 @@
     if(id===state.activeAPIId){fillProfileSelectors();return;}
     saveSettings({silent:true});
     state.activeAPIId=id;
-    byId('dataConsent').checked=false; // consent applies to the selected provider
     renderProfile(activeProfile());
+    restoreRememberedConsent();
     persistAPIProfiles();
     byId('settingsStatus').textContent='已切换至 '+activeProfile().name+'；发送论文前需重新确认数据传输同意';
     updateRunOverview();
@@ -472,7 +511,7 @@
     state.apiProfiles.push(p);
     state.activeAPIId=p.id;
     state.sessionKeys.set(p.id,''); // cloning intentionally excludes credentials
-    byId('dataConsent').checked=false;
+    invalidateConsent();
     persistAPIProfiles();renderProfile(p);
     byId('settingsPanel').classList.remove('hidden');
     byId('settingsStatus').textContent='已创建配置，填写接口和密钥后点击保存/测试。复制配置不会复制密钥。';
@@ -485,9 +524,9 @@
     state.apiProfiles=state.apiProfiles.filter(x=>x.id!==p.id);
     state.sessionKeys.delete(p.id);
     rt.setPref('profileSecret.'+p.id,'');
+    rt.setPref(consentPrefKey(p.id),'');
     state.activeAPIId=state.apiProfiles[0].id;
-    byId('dataConsent').checked=false;
-    persistAPIProfiles();renderProfile(activeProfile());
+    persistAPIProfiles();renderProfile(activeProfile());restoreRememberedConsent();
   }
   async function testActiveAPI(){
     if(state.busy)return;
@@ -1341,16 +1380,16 @@
     byId('addAPIProfile').addEventListener('click',()=>addAPIProfile(false));
     byId('cloneAPIProfile').addEventListener('click',()=>addAPIProfile(true));
     byId('deleteAPIProfile').addEventListener('click',deleteAPIProfile);
-    byId('apiRoute').addEventListener('change',()=>{updateGatewayVisibility();byId('dataConsent').checked=false;updateRunOverview();});
-    byId('proxyMode').addEventListener('change',()=>{updateProxyVisibility();byId('dataConsent').checked=false;updateRunOverview();});
-    byId('proxyType').addEventListener('change',()=>{updateProxyVisibility();byId('dataConsent').checked=false;updateRunOverview();});
+    byId('apiRoute').addEventListener('change',()=>{updateGatewayVisibility();invalidateConsent();});
+    byId('proxyMode').addEventListener('change',()=>{updateProxyVisibility();invalidateConsent();});
+    byId('proxyType').addEventListener('change',()=>{updateProxyVisibility();invalidateConsent();});
     byId('apiProvider').addEventListener('change',()=>{
       const preset=ReviewProfiles.preset(byId('apiProvider').value);
       byId('endpoint').value=preset.endpoint;
       byId('model').value=preset.model;
       byId('apiProfileName').value=preset.name;
       byId('apiKey').value='';byId('rememberKey').checked=false;
-      byId('dataConsent').checked=false;
+      invalidateConsent();
       byId('settingsStatus').textContent=preset.id==='chatgpt'
         ?'请选择“使用 ChatGPT 登录”；无需 API Key。'
         :'已应用服务商预设。请填写该服务的 API Key，然后保存或测试。';
@@ -1360,11 +1399,15 @@
     });
     for(const id of ['question','model','apiProfileName','endpoint','gatewayEndpoint','apiKey','proxyHost','proxyPort','proxyType','proxyRemoteDNS','chunkChars','maxCharsPerPaper','apiRoute']) {
       byId(id)?.addEventListener('input',()=>{
-        if(['endpoint','gatewayEndpoint','apiKey','proxyHost','proxyPort','proxyType','proxyRemoteDNS'].includes(id))byId('dataConsent').checked=false;
+        if(['endpoint','gatewayEndpoint','apiKey','model','proxyHost','proxyPort','proxyType','proxyRemoteDNS'].includes(id))invalidateConsent();
         updateRunOverview();
       });
     }
-    byId('dataConsent').addEventListener('change',updateRunOverview);
+    byId('dataConsent').addEventListener('change',()=>{
+      if(byId('dataConsent').checked)rememberCurrentConsent();
+      else rt.setPref(consentPrefKey(activeProfile()?.id),'');
+      updateRunOverview();
+    });
     byId('templateEditorBtn').addEventListener('click',openTemplateEditor);
     byId('closeTemplateEditor').addEventListener('click',()=>byId('templatePanel').classList.add('hidden'));
     byId('saveTemplateBtn').addEventListener('click',saveCustomTemplate);

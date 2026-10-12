@@ -1,4 +1,8 @@
-# Zotero Review Studio v0.5.5（Zotero 7 综述研究工作台）
+# Zotero Review Studio v0.5.6（Zotero 7 综述研究工作台）
+
+## v0.5.6：同一配置只需确认一次数据传输
+
+首次使用某个模型服务配置时勾选数据传输确认后，插件会记住这套配置。再次打开插件或继续生成章节时不需要重复勾选；更换服务商、模型、接口地址、中转网关或代理路线后，会重新要求确认。
 
 ## v0.5.5：加速批量分析并显示真实进度
 
@@ -152,7 +156,7 @@ python3 tests/browser_smoke.py  # 需要 Playwright + Chromium
 python3 scripts/build_xpi.py
 ```
 
-XPI 输出位于 `dist/zotero-review-studio-0.5.5.xpi`。无需 npm 安装。
+XPI 输出位于 `dist/zotero-review-studio-0.5.6.xpi`。无需 npm 安装。
 
 MIT License.
 
