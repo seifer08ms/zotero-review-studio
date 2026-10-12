@@ -43,6 +43,18 @@ with sync_playwright() as pw:
     expect(page.locator('.top-actions>.rs-picker')).to_be_visible()
     assert 'chatgpt'==page.locator('#apiProvider').input_value()
 
+    # Provider presets are exposed directly in the profile-management menu;
+    # selecting one creates a real saved profile instead of silently replacing
+    # the currently active ChatGPT profile.
+    preset_values=page.locator('#apiProfileSelect option').evaluate_all(
+        "(items)=>items.filter(x=>x.value.startsWith('__reviewstudio_preset__')).map(x=>x.value)")
+    assert preset_values, 'Provider presets are missing from the API profile menu'
+    assert any(x.endswith('deepseek') for x in preset_values)
+    deepseek_label='＋ DeepSeek（新建配置）'
+    page.locator('#apiProfileSelect').locator('xpath=..').locator('.rs-picker-button').click()
+    page.locator('.rs-dropdown-portal').get_by_role('option',name=deepseek_label,exact=True).click()
+    expect(page.locator('#apiProvider')).to_have_value('deepseek')
+
     # Preserve the no-key ChatGPT default; add an independent legacy API profile.
     page.locator('#addAPIProfile').click()
     pick(page,'apiProvider','openai')
@@ -56,8 +68,10 @@ with sync_playwright() as pw:
     page.locator('#cloneAPIProfile').click()
     pick(page,'proxyMode','direct')
     page.locator('#saveSettings').click()
-    assert page.locator('#apiProfileSelect option').count()==3
-    ids=page.locator('#apiProfileSelect option').evaluate_all('(items)=>items.map(x=>x.value)')
+    saved=page.locator('#apiProfileSelect option').evaluate_all(
+        "(items)=>items.filter(x=>!x.value.startsWith('__reviewstudio_preset__') && !x.disabled).map(x=>x.value)")
+    assert len(saved)==4, saved
+    ids=saved
     pick(page,'apiProfileSelect',ids[1])
     expect(page.locator('#proxyMode')).to_have_value('custom')
     expect(page.locator('#proxyPort')).to_have_value('9876')

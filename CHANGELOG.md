@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.5.3 — fix ChatGPT token exchange and expose provider presets
+
+- Corrects the Gecko upload stream call used by the ChatGPT OAuth token exchange and keeps a compatible fallback for older Zotero builds.
+- Adds direct DeepSeek, Qwen, SiliconFlow, OpenRouter, Ollama, LM Studio and custom preset entries to the API profile management menu.
+
 ## 0.5.2 — restore compatible API profiles and fix XUL dropdown mounting
 
 - Hides the native XHTML/XUL select layer before showing the custom opaque popup, preventing duplicate transparent options from overlapping the settings panel.

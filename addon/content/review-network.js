@@ -52,11 +52,19 @@ var ReviewNetwork = (function () {
       ci.nsILoadInfo.SEC_ALLOW_CROSS_ORIGIN_SEC_CONTEXT_IS_NULL,
       ci.nsIContentPolicy.TYPE_OTHER);
     const handler=services.io.getProtocolHandler(uri.scheme).QueryInterface(ci.nsIProxiedProtocolHandler);
-    const pps=cc['@mozilla.org/network/protocol-proxy-service;1']
-      .getService(ci.nsIProtocolProxyService);
-    const proxyInfo=makeProxyInfo(config,pps,ci);
-    const channel=handler.newProxiedChannel(uri,proxyInfo,0,null,baseChannel.loadInfo)
-      .QueryInterface(ci.nsIHttpChannel);
+    let channel;
+    if(config.mode==='inherit') {
+      // Let Gecko resolve Zotero's normal system/PAC proxy on the base channel.
+      // This path is used only after Zotero.HTTP has failed on a newer Gecko
+      // binding, so it preserves the user's inherited network settings.
+      channel=baseChannel.QueryInterface(ci.nsIHttpChannel);
+    } else {
+      const pps=cc['@mozilla.org/network/protocol-proxy-service;1']
+        .getService(ci.nsIProtocolProxyService);
+      const proxyInfo=makeProxyInfo(config,pps,ci);
+      channel=handler.newProxiedChannel(uri,proxyInfo,0,null,baseChannel.loadInfo)
+        .QueryInterface(ci.nsIHttpChannel);
+    }
 
     const verb=String(method||'POST').toUpperCase();
     if (options.body !== undefined && options.body !== null) {
@@ -64,8 +72,18 @@ var ReviewNetwork = (function () {
       const stream=cc['@mozilla.org/io/string-input-stream;1'].createInstance(ci.nsIStringInputStream);
       stream.setUTF8Data(payload);
       const bytes=new TextEncoder().encode(payload).byteLength;
-      channel.QueryInterface(ci.nsIUploadChannel2)
-        .explicitSetUploadStream(stream,'application/json; charset=utf-8',bytes,verb);
+      const contentType=Object.entries(options.headers||{})
+        .find(([key])=>String(key).toLowerCase()==='content-type')?.[1]
+        ||'application/octet-stream';
+      const upload=channel.QueryInterface(ci.nsIUploadChannel2);
+      // Current Gecko requires the fifth aStreamHasHeaders argument. Keep a
+      // four-argument fallback for older Zotero runtimes whose XPCOM binding
+      // predates that parameter.
+      try{upload.explicitSetUploadStream(stream,String(contentType),bytes,verb,false);}
+      catch(error){
+        if(!/argument|parameter|not enough/i.test(String(error?.message||error)))throw error;
+        upload.explicitSetUploadStream(stream,String(contentType),bytes,verb);
+      }
     }
     channel.requestMethod=verb;
     const headers=options.headers||{};
@@ -126,7 +144,17 @@ var ReviewNetwork = (function () {
 
   async function request(zotero,method,url,options={},profile={}) {
     const config=proxyConfig(profile);
-    if(config.mode==='inherit') return zotero.HTTP.request(method,url,options);
+    if(config.mode==='inherit') {
+      try{return await zotero.HTTP.request(method,url,options);}
+      catch(error){
+        // Zotero builds backed by a newer Gecko can expose a five-argument
+        // nsIUploadChannel2 while their bundled Zotero.HTTP/XHR path still
+        // calls the old four-argument form. Retry only this known binding
+        // failure through the compatible channel implementation above.
+        if(!/nsIUploadChannel2\.explicitSetUploadStream|explicitSetUploadStream/i.test(String(error?.message||error)))throw error;
+        return explicitRequest(method,url,options,config);
+      }
+    }
     return explicitRequest(method,url,options,config);
   }
   return {proxyConfig,request,explicitRequest,makeProxyInfo};
