@@ -14,9 +14,16 @@ def pick(page, element_id, value):
     popup=page.locator('.rs-dropdown-portal')
     expect(popup).to_be_visible()
     # A nontransparent, high-z-index popup avoids mingling with original form options.
-    rendered=popup.evaluate('(el)=>({background:getComputedStyle(el).backgroundColor,z:Number(getComputedStyle(el).zIndex)})')
+    rendered=popup.evaluate('''(el)=>({
+        background:getComputedStyle(el).backgroundColor,
+        optionBackground:getComputedStyle(el.querySelector('.rs-dropdown-option')).backgroundColor,
+        opacity:getComputedStyle(el).opacity,
+        z:Number(getComputedStyle(el).zIndex)
+    })''')
     assert rendered['z']>10000, rendered
     assert rendered['background'] not in ['rgba(0, 0, 0, 0)','transparent'],rendered
+    assert rendered['optionBackground'] not in ['rgba(0, 0, 0, 0)','transparent'],rendered
+    assert rendered['opacity']=='1',rendered
     popup.get_by_role('option',name=label.strip(),exact=True).click()
     expect(select).to_have_value(value)
     expect(popup).to_be_hidden()
