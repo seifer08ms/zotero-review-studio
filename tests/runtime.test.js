@@ -45,6 +45,10 @@ const runtime=sandbox.ReviewRuntime.create({zotero,selectedIDs:[12],libraryID:1}
   const online=await runtime.searchOnline('network connectivity');
   assert.equal(online[0].source,'online');
   assert(online[0].abstract.includes('Network'));
+  assert(!httpCalls.find(x=>x.method==='GET').url.includes('filter=type:article'));
+  const reverse=await runtime.searchGapCandidates({claim:'Domain generalization remains open'},'road extraction',[12],()=>{});
+  assert.equal(reverse.candidates[0].openAlexID,'https://openalex.org/W1');
+  assert(reverse.query.includes('Domain generalization remains open'));
   const input={...(await runtime.hydrateInitialSelection())[0],id:'P1'};
   const template=Core.BUILT_IN_TEMPLATES[0];
   const output=await runtime.analyzeMany([input],'道路跨区域泛化还存在什么问题和研究空白？',{
@@ -70,6 +74,25 @@ const runtime=sandbox.ReviewRuntime.create({zotero,selectedIDs:[12],libraryID:1}
   },template,()=>{});
   assert(completed.draft.includes('Research Gaps'));
   assert(httpCalls.filter(x=>x.method==='POST').length>beforeEvidence);
+  // Incremental reuse must respect the extraction configuration and retry a
+  // metadata-only paper, because a PDF may have been attached since the last run.
+  const cfg={endpoint:'https://api.openai.com/v1/chat/completions',model:'mock-model',
+    chunkChars:3000,maxCharsPerPaper:6500,language:'zh-CN',matrixExtraction:true};
+  const reusedEvents=[];
+  await runtime.analyzeEvidence([input],'道路跨区域泛化还存在什么问题和研究空白？',cfg,
+    event=>reusedEvents.push(event.type),{previousResult:{
+      question:'道路跨区域泛化还存在什么问题和研究空白？',
+      analysisConfig:{...cfg,matrixExtraction:false},
+      analyses:[{paper:input,summary:{},skipped:false}],
+    }});
+  assert(reusedEvents.includes('paper'),'A changed extraction configuration must not reuse old evidence');
+  const retryEvents=[];
+  await runtime.analyzeEvidence([input],'道路跨区域泛化还存在什么问题和研究空白？',cfg,
+    event=>retryEvents.push(event.type),{previousResult:{
+      question:'道路跨区域泛化还存在什么问题和研究空白？',analysisConfig:{...cfg,matrixExtraction:false},
+      analyses:[{paper:input,summary:null,skipped:true,error:null}],
+    }});
+  assert(retryEvents.includes('paper'),'Metadata-only papers must be retried for a newly available PDF');
   const note=await runtime.saveNote(output.draft);
   assert.equal(note.id,17);
   assert(notes[0].html.includes('Research Gaps'));

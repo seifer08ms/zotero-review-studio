@@ -14,7 +14,7 @@ expected = ["bootstrap.js", "manifest.json", "prefs.js",
             "content/plugin.js", "content/review.xhtml", "content/review-core.js",
             "content/review-profiles.js", "content/review-network.js",
             "content/review-checkpoints.js", "content/review-pages.js",
-            "content/review-chapters.js",
+            "content/review-chapters.js", "content/review-matrix.js",
             "content/review-engine.js", "content/review-ui.js", "content/review.css"]
 missing = [f for f in expected if not (src / f).is_file()]
 if missing:

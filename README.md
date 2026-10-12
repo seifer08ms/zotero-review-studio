@@ -4,14 +4,24 @@
 [![Latest Release](https://img.shields.io/github/v/release/seifer08ms/zotero-review-studio)](https://github.com/seifer08ms/zotero-review-studio/releases/latest)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-**Current version: v0.4.0 (beta)** · [Download XPI](https://github.com/seifer08ms/zotero-review-studio/releases/latest/download/zotero-review-studio-0.4.0.xpi) · [中文说明](README.zh-CN.md)
+**Current version: v0.5.0 (beta)** · [Download XPI](https://github.com/seifer08ms/zotero-review-studio/releases/latest/download/zotero-review-studio-0.5.0.xpi) · [中文说明](README.zh-CN.md)
+
+## New in v0.5.0: evidence matrix and reviewed Research Gaps
+
+- Build an editable cross-paper evidence matrix for methods, assumptions, datasets, metrics, quantitative results, limitations, quotations and PDF pages.
+- Keep automatically derived cells separate from manual corrections, preserve those corrections during incremental refreshes, and copy the matrix as TSV, Word-compatible HTML or LaTeX.
+- Review each potential Research Gap as pending, accepted or rejected. Only an accepted Gap with a complete quote-to-paper evidence chain is sent to draft generation.
+- Edit a Gap's wording in the review card; a changed claim automatically returns to pending review so the evidence decision is made against the revised statement.
+- Run a reverse search against the Zotero library and OpenAlex to find candidate studies that may already address a proposed Gap.
+- Incremental reuse is optimized for appending new papers to the current selection; changing the order safely triggers a fresh analysis so evidence IDs cannot be reassigned silently.
+- The generated draft still uses traceable internal markers such as `[P1]`; evidence buttons locate source passages and do not insert Zotero citation keys into Word or LaTeX yet.
 
 > This is a beta release. Test with a small number of non-sensitive papers before production use.
 
 
 A Zotero 7 review-writing workspace for selecting papers, sequential PDF evidence extraction, cross-paper research-gap synthesis, OpenAlex/Zotero discovery, deriving new review templates from published survey PDFs, and generating editable Markdown reviews.
 
-## New in v0.4.0: official ChatGPT sign-in, no API key
+## Also in v0.4.0: official ChatGPT sign-in, no API key
 
 **New installations default to “Sign in with ChatGPT”**. Users with an eligible ChatGPT Plus or Pro plan can click **Use ChatGPT login** in API settings, authorize Zotero Review Studio in the **official system-browser OAuth flow**, then select an allowed model and test the connection. A paid OpenAI API key is **not required** for this account-based path. The user must explicitly authorize it; existing ChatGPT web or Codex desktop cookies are **never read**. The integration follows the open-source [Sign in with ChatGPT](https://developers.openai.com/siwc/quickstart) specification. Eligibility, model access and usage limits are controlled by the user's ChatGPT account and OpenAI. This is not unlimited inference and is separate from ordinary pay-as-you-go API billing.
 
@@ -61,16 +71,21 @@ node tests/exemplar.test.js
 node tests/profiles.test.js
 node tests/v3.test.js
 node tests/chatgpt.test.js
+node tests/gap-validation.test.js
+node tests/matrix.test.js
+node tests/incremental_resume.test.js
+node tests/pipeline_equivalence.test.js
+node tests/performance.test.js
 python3 scripts/make_browser_smoke.py
 python3 tests/browser_smoke.py # Chromium / Playwright required
 python3 scripts/build_xpi.py
 ```
 
-Build result: `dist/zotero-review-studio-0.4.0.xpi`. The plugin itself has no npm dependencies.
+Build result: `dist/zotero-review-studio-0.5.0.xpi`. The plugin itself has no npm dependencies.
 
 ## Install & updates
 
-1. Download `zotero-review-studio-0.4.0.xpi` from the [latest GitHub Release](https://github.com/seifer08ms/zotero-review-studio/releases/latest).
+1. Download `zotero-review-studio-0.5.0.xpi` from the [latest GitHub Release](https://github.com/seifer08ms/zotero-review-studio/releases/latest).
 2. Zotero 7 → Tools → Plugins → gear → **Install Plugin From File**; choose the XPI and restart Zotero if prompted.
 3. The XPI includes a Zotero `update_url`. GitHub Releases publish the corresponding `update.json` with a SHA-256 integrity hash, enabling supported automatic update checks.
 

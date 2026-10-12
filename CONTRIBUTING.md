@@ -7,7 +7,7 @@ Thank you for helping improve evidence-based academic review workflows.
 Requirements: Zotero 7 (for manual installation and validation), Node.js 22+, and Python 3.10+ for packaging. No npm install is required.
 
 ```bash
-for test in core runtime exemplar profiles v3 incremental_resume pipeline_equivalence performance; do
+for test in core runtime exemplar profiles v3 incremental_resume pipeline_equivalence performance chatgpt gap-validation matrix; do
   node "tests/${test}.test.js"
 done
 python3 scripts/build_xpi.py

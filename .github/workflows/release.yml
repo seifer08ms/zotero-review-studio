@@ -53,7 +53,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          for test in core runtime exemplar profiles v3 incremental_resume pipeline_equivalence performance chatgpt; do
+          for test in core runtime exemplar profiles v3 incremental_resume pipeline_equivalence performance chatgpt gap-validation matrix; do
             node "tests/${test}.test.js"
           done
 

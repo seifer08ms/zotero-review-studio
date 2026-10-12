@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.5.0 — evidence comparison matrix and reviewed Research Gaps
+
+- Adds an editable, project-scoped comparison matrix with method, assumptions, datasets, metrics, quantitative results, limitations, verified quotations and PDF file pages.
+- Separates automatically derived cells from researcher edits; incremental updates retain manual corrections and add newly analyzed papers.
+- Copies the visible matrix as TSV, Word-compatible HTML or LaTeX, and supports filtering, sorting and custom comparison dimensions.
+- Validates every synthesized finding against the evidence record that owns each quotation, reporting unknown, unverified, ambiguous and mismatched paper references.
+- Adds pending, accepted and rejected review states for potential Research Gaps. Only accepted gaps with complete quote-to-paper verification are supplied to draft and chapter generation.
+- Lets researchers edit a Gap claim in place; edited claims return to pending review before they can be accepted again.
+- Adds per-gap reverse search across the Zotero library and OpenAlex, retaining candidate papers as review leads rather than treating search results as evidence.
+- Keeps proceedings and preprints in OpenAlex candidate discovery and preserves resumable checkpoints, official ChatGPT sign-in, per-profile proxy settings and exemplar templates.
+- Automatic matrix method and limitation cells use only quote-verified claims; reducer-only summary text remains available for manual checking instead of being presented as direct evidence.
+
 ## 0.4.0 — ChatGPT-plan OAuth and stable in-dialog selectors
 
 - Fresh installations default to official “Sign in with ChatGPT” (eligible Plus/Pro account authorization) without requiring an API key; existing API profile selection is preserved on upgrade.

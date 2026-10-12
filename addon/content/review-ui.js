@@ -16,6 +16,7 @@
     exemplar:null, exemplarResult:null, pendingTemplateMeta:null,
     apiProfiles:[],activeAPIId:'',sessionKeys:new Map(),apiTested:new Map(),analysisFingerprint:null,
     latestCheckpoint:null,restoredProjectID:null,draftSaveTimer:null,
+    matrix:null,matrixSaveTimer:null,gapSearchBusy:false,
 
   };
 
@@ -116,6 +117,7 @@
     byId('autoDiscoverBtn').disabled=on||state.busy;
   }
   async function discovery(kind) {
+    if(state.busy||state.gapSearchBusy)return;
     const query=byId('searchTerms').value.trim() || byId('question').value.trim();
     if(query.length<3){alert('请先输入较具体的检索关键词');return;}
     setDiscoveryBusy(true);
@@ -401,6 +403,10 @@
       proxyMode:profile.proxyMode,proxyType:profile.proxyType,
       proxyHost:profile.proxyHost,proxyPort:profile.proxyPort,
       proxyRemoteDNS:profile.proxyRemoteDNS,
+      // v0.5 comparison fields are requested during evidence extraction.
+      // This flag is part of the checkpoint signature so a legacy run is not
+      // silently resumed with a different evidence schema.
+      matrixExtraction:true,
     };
   }
   function saveSettings(options={}) {
@@ -534,7 +540,7 @@
 
   function setBusy(on){
     state.busy=on;
-    for(const id of ['runBtn','localSearchBtn','onlineSearchBtn','autoDiscoverBtn','saveNoteBtn','extractExemplarBtn','saveTemplateBtn','templateEditorBtn','generateDraftBtn','regenerateDraftBtn','regenerateChapterBtn','locatePagesBtn','restoreCheckpointBtn','resumeCheckpointBtn','clearCheckpointBtn','chapterSelect','apiProfileSelect','activeProfileQuick','testAPI','addAPIProfile','cloneAPIProfile','deleteAPIProfile']){
+    for(const id of ['runBtn','localSearchBtn','onlineSearchBtn','autoDiscoverBtn','saveNoteBtn','extractExemplarBtn','saveTemplateBtn','templateEditorBtn','generateDraftBtn','regenerateDraftBtn','regenerateChapterBtn','locatePagesBtn','restoreCheckpointBtn','resumeCheckpointBtn','clearCheckpointBtn','chapterSelect','apiProfileSelect','activeProfileQuick','testAPI','addAPIProfile','cloneAPIProfile','deleteAPIProfile','refreshMatrixBtn','clearMatrixEditsBtn','addMatrixColumnBtn','copyMatrixTSVBtn','copyMatrixHTMLBtn','copyMatrixLatexBtn']){
       const el=byId(id);if(el)el.disabled=on;
     }
     for(const id of ['saveSettings','apiProvider','apiProfileName','endpoint','model',
@@ -544,6 +550,7 @@
       const input=byId(id);if(input)input.disabled=on;
     }
     byId('cancelBtn').disabled=!on;
+    document.querySelectorAll('.gap-reverse-search').forEach(button=>{button.disabled=on||state.gapSearchBusy;});
     if(!on) byId('extractExemplarBtn').disabled=!state.exemplar;
     showChatGPTFields();
     refreshDropdowns();
@@ -568,6 +575,7 @@
         byId('currentStage').textContent=`${label} · 块 ${event.chunk}/${event.total}`;
         break;
       case 'paper-reused':log(`  ✓ 恢复已完成证据卡：${label}`);break;
+      case 'incremental-reuse':log(`  ✓ 增量分析复用 ${event.count} 篇已有证据，继续处理新增文献`);break;
       case 'chunk-reused':log(`  ✓ 跳过已保存的第 ${event.chunk}/${event.total} 块`);break;
       case 'group-reused':log(`  ✓ 复用已保存的第 ${event.index}/${event.total} 组`);break;
       case 'page-paper':log(`正在从 PDF 精确匹配 ${label} 的 ${event.count} 处证据页码…`);break;
@@ -579,6 +587,7 @@
         pct=Math.max(pct,75+Math.round(12*event.index/event.total));
         break;
       case 'synthesis':log('正在合并多个主题组的共同 Gap 和反例…');pct=90;break;
+      case 'gap-search':log('正在反向检索可能已经处理该 Gap 的研究…');break;
       case 'draft':log('跨论文归纳完成，正在生成综述初稿…');pct=95;break;
       case 'exemplar-chunk':
         log(`范例综述结构提取：第 ${event.index}/${event.total} 块`);
@@ -651,7 +660,7 @@
   }
 
   async function startAnalysis(resume=false){
-    if(state.busy)return;
+    if(state.busy||state.gapSearchBusy)return;
     const question=byId('question').value.trim();
     if(question.length<12){alert('请写出更具体的研究问题（至少 12 字）');return;}
     const papers=includedPapers();
@@ -680,6 +689,16 @@
         alert('要从断点续跑，必须恢复相同的论文、研究问题及模型/分块设置。请先点击“恢复上次项目与选文献”。');return;
       }
     }
+    const previousResult=state.result;
+    const previousMatrix=state.matrix;
+    const previousAnalyzedCount=previousResult?.analyses?.filter(a=>!a?.skipped&&a?.summary)?.length||0;
+    const canReuse=!!previousResult&&!resume&&papers.length>previousAnalyzedCount&&previousResult.question===question
+      &&previousResult.analysisConfig
+      &&previousResult.analysisConfig.endpoint===settings.endpoint
+      &&previousResult.analysisConfig.model===settings.model
+      &&Number(previousResult.analysisConfig.chunkChars)===Number(settings.chunkChars)
+      &&Number(previousResult.analysisConfig.maxCharsPerPaper)===Number(settings.maxCharsPerPaper)
+      &&previousResult.analysisConfig.matrixExtraction===true;
     state.result=null;state.progressLines=[];
     byId('logBox').textContent='';
     byId('progressPanel').classList.remove('hidden');
@@ -692,7 +711,11 @@
       const jobs=papers.map((p,i)=>({...p,id:'P'+(i+1)}));
       log(`已确认 ${jobs.length} 篇；模型 ${settings.profileName} / ${settings.model}；先提取证据与 Gap，不生成初稿`);
       log('外部来源缺少本地 PDF 时，只能做摘要分析，报告会明确区分');
-      const result=await rt.analyzeEvidence(jobs,question,settings,onProgress,{resume});
+      const result=await rt.analyzeEvidence(jobs,question,settings,onProgress,
+        {resume,previousResult:canReuse?previousResult:null});
+      if(canReuse&&previousMatrix&&typeof ReviewMatrix!=='undefined'){
+        result.matrix=ReviewMatrix.merge(previousMatrix,result);
+      }
       state.latestCheckpoint=await rt.loadLatestCheckpoint();
       state.result=result;
       state.analysisFingerprint=currentFingerprint();
@@ -710,7 +733,7 @@
   }
 
   async function generateReviewDraft(){
-    if(state.busy)return;
+    if(state.busy||state.gapSearchBusy)return;
     if(!state.result){alert('请先完成证据与 Gap 分析');return;}
     if(evidenceStale()){alert('当前研究问题或纳入的文献已改变。为保证引用对应，请重新运行“分析证据与 Gap”，再生成初稿。');return;}
     if(!byId('dataConsent').checked){
@@ -756,7 +779,7 @@
     refreshDropdowns();
   }
   async function regenerateSelectedChapter(){
-    if(state.busy||!state.result||evidenceStale())return;
+    if(state.busy||state.gapSearchBusy||!state.result||evidenceStale())return;
     if(!byId('dataConsent').checked){alert('请先确认使用当前 API 处理已有证据卡');return;}
     let settings;try{settings=getSettings();}catch(e){alert(e.message);return;}
     const selection=Number(byId('chapterSelect').value);
@@ -777,7 +800,7 @@
     finally{setBusy(false);updateRunOverview()}
   }
   async function restoreLatestCheckpoint(){
-    if(state.busy||!state.latestCheckpoint)return;
+    if(state.busy||state.gapSearchBusy||!state.latestCheckpoint)return;
     const cp=state.latestCheckpoint;
     if(!confirm('从本地恢复“'+cp.input?.question?.slice(0,75)+'”及 '+(cp.input?.papers?.length||0)+' 篇文献？这将替换当前未保存的文献选择与研究问题。'))return;
     state.included.clear();
@@ -789,11 +812,17 @@
     state.restoredProjectID=cp.projectId;
     state.result=null;
     if(cp.synthesis){
-      state.result={analyses:cp.analyses||[],synthesis:cp.synthesis,question:cp.input.question,
+      const restoredAnalyses=cp.analyses||[];
+      const restoredSynthesis=ReviewCore.validateSynthesis(cp.synthesis,restoredAnalyses,
+        {paperIds:restoredAnalyses.filter(a=>!a.skipped&&a.summary).map(a=>a.paper?.id)});
+      state.result={analyses:restoredAnalyses,synthesis:restoredSynthesis,question:cp.input.question,
         draft:cp.draft||'',templateId:cp.templateId||null,
         sourceCount:(cp.analyses||[]).filter(a=>a.summary&&!a.skipped).length,
         metadataOnly:(cp.analyses||[]).filter(a=>a.skipped).length,
-        warnings:[],projectId:cp.projectId};
+        warnings:[],projectId:cp.projectId,
+        analysisConfig:{endpoint:cp.input?.settings?.endpoint||'',model:cp.input?.settings?.model||'',
+          chunkChars:cp.input?.settings?.chunkChars,maxCharsPerPaper:cp.input?.settings?.maxCharsPerPaper,
+          matrixExtraction:cp.input?.settings?.matrixExtraction===true}};
     }
     renderIncluded();renderSuggestions();
     state.analysisFingerprint=state.result?currentFingerprint():null;
@@ -808,7 +837,7 @@
     updateRunOverview();
   }
   async function locatePagesForGap(gap=null){
-    if(state.busy||!state.result||evidenceStale())return;
+    if(state.busy||state.gapSearchBusy||!state.result||evidenceStale())return;
     if(!confirm('将逐篇重新提取相关 PDF 文本前缀以核对原文所在文件页码。长篇 PDF 可能耗时数分钟，且不会上传 PDF 到其他平台。继续吗？'))return;
     setBusy(true);
     byId('progressPanel').classList.remove('hidden');
@@ -817,24 +846,257 @@
       const allowed=gap?new Set(gap.evidenceIds||[]):null;
       const status=await rt.locateGapPages(state.result,onProgress,allowed);
       byId('pageStatus').textContent='真实匹配 '+status.exact+' 处 · 无法定位 '+status.missing+' 处';
-      renderGaps(state.result);renderEvidence(state.result);
+      renderGaps(state.result);renderEvidence(state.result);refreshMatrix();
       log('PDF 页码定位完成；仅展示真实匹配结果，可能与论文印刷页码不同。');
     }catch(e){byId('pageStatus').textContent='页码定位异常：'+(e.message||e);}
     finally{setBusy(false);updateRunOverview()}
   }
+
+  function matrixPrefKey(){
+    const id=String(state.result?.projectId||state.restoredProjectID||'').replace(/[^a-zA-Z0-9_.-]/g,'_');
+    return id?'matrix.'+id:'';
+  }
+  function persistMatrix(){
+    if(!state.matrix)return;
+    const key=matrixPrefKey();
+    if(!key)return;
+    try{rt.setPref(key,JSON.stringify(state.matrix));}
+    catch(e){byId('matrixStatus').textContent='矩阵已更新，但本地保存失败：'+(e.message||e);}
+    if(state.result)state.result.matrix=state.matrix;
+  }
+  function loadMatrix(result){
+    const key=String(result?.projectId||'').replace(/[^a-zA-Z0-9_.-]/g,'_');
+    let stored=null;
+    if(key){
+      try{const raw=rt.getPref('matrix.'+key,'');if(raw)stored=JSON.parse(raw);}catch(_){stored=null;}
+    }
+    // Merge preserves manual cells and brings in papers added by an incremental
+    // checkpoint run. A malformed/old preference is discarded safely.
+    state.matrix=ReviewMatrix.merge(stored||result?.matrix||null,result);
+    if(state.result)state.result.matrix=state.matrix;
+    persistMatrix();
+  }
+  function matrixRows(){
+    if(!state.matrix)return [];
+    const query=byId('matrixFilter')?.value||'';
+    const missing=!!byId('matrixOnlyMissing')?.checked;
+    const sort=String(byId('matrixSort')?.value||'title:asc').split(':');
+    const view={...state.matrix,rows:ReviewMatrix.filterRows(state.matrix,query,missing)};
+    return ReviewMatrix.sortRows(view,sort[0]||'title',sort[1]||'asc').rows;
+  }
+  function fillMatrixSort(){
+    const select=byId('matrixSort');if(!select||!state.matrix)return;
+    const old=select.value||'title:asc';clear(select);
+    [['title','论文标题'],['citation','作者 / 年份'],...state.matrix.columns.map(c=>[c.key,c.label])]
+      .forEach(([key,label])=>{
+        for(const direction of ['asc','desc']){
+          const option=elm('option',null,label+(direction==='asc'?' ↑':' ↓'));
+          option.value=key+':'+direction;select.appendChild(option);
+        }
+      });
+    select.value=[...select.options].some(x=>x.value===old)?old:'title:asc';
+    refreshDropdowns();
+  }
+  function scheduleMatrixSave(){
+    if(state.matrixSaveTimer)clearTimeout(state.matrixSaveTimer);
+    state.matrixSaveTimer=setTimeout(()=>{state.matrixSaveTimer=null;persistMatrix();},500);
+  }
+  function renderMatrix(){
+    const root=byId('matrixTableWrap');if(!root||!state.matrix)return;
+    clear(root);fillMatrixSort();
+    const columns=state.matrix.columns, rows=matrixRows();
+    const table=document.createElement('table');table.className='matrix-table';
+    const thead=document.createElement('thead'), head=document.createElement('tr');
+    ['论文','作者 / 年份','来源 / 覆盖率',...columns.map(c=>c.label)].forEach(label=>head.appendChild(elm('th',null,label)));
+    thead.appendChild(head);table.appendChild(thead);
+    const body=document.createElement('tbody');
+    for(const row of rows){
+      const tr=document.createElement('tr');
+      const paper=elm('td','matrix-paper');
+      paper.appendChild(elm('strong',null,row.title));
+      paper.appendChild(elm('span','subtle',row.paperId));
+      tr.appendChild(paper);tr.appendChild(elm('td','matrix-citation',row.citation||'—'));
+      tr.appendChild(elm('td','matrix-source',`${row.sourceQuality} · ${Math.round(Math.max(0,Math.min(1,row.coverage))*100)}%`));
+      for(const column of columns){
+        const td=elm('td','matrix-cell');
+        const input=document.createElement('textarea');input.rows=column.key==='evidence'?4:3;
+        input.value=row.cells?.[column.key]||'';input.dataset.paperId=row.paperId;input.dataset.matrixKey=column.key;
+        input.title=row.manualCells?.[column.key]?'手工修改；增量更新时会保留':'自动证据或待人工补充字段';
+        if(row.manualCells?.[column.key])td.classList.add('manual-cell');
+        input.addEventListener('input',()=>{
+          state.matrix=ReviewMatrix.edit(state.matrix,row.paperId,column.key,input.value);
+          td.classList.add('manual-cell');state.result.matrix=state.matrix;scheduleMatrixSave();
+        });
+        td.appendChild(input);tr.appendChild(td);
+      }
+      body.appendChild(tr);
+    }
+    table.appendChild(body);root.appendChild(table);
+    const total=state.matrix.rows.length;
+    byId('matrixStatus').textContent=`显示 ${rows.length} / ${total} 篇论文 · ${columns.length} 个比较维度。蓝色单元格为人工修改；新增论文会在“更新矩阵”后加入。`;
+  }
+  function initMatrix(result){
+    if(typeof ReviewMatrix==='undefined')return;
+    loadMatrix(result);renderMatrix();
+  }
+  function refreshMatrix(){
+    if(!state.result)return;
+    state.matrix=ReviewMatrix.merge(state.matrix,state.result);
+    state.result.matrix=state.matrix;persistMatrix();renderMatrix();
+  }
+  function clearMatrixEdits(){
+    if(!state.matrix)return;
+    if(!confirm('清除矩阵中的全部手工修改，并恢复自动字段？'))return;
+    state.matrix=ReviewMatrix.clearManual(state.matrix);state.result.matrix=state.matrix;
+    persistMatrix();renderMatrix();
+  }
+  function addMatrixColumn(){
+    const input=byId('matrixNewColumn'),label=input.value.trim();
+    if(!label){alert('请先输入比较维度名称');return;}
+    const next=ReviewMatrix.addColumn(state.matrix,label);
+    if(next.columns.length===state.matrix.columns.length){alert('该比较维度已存在或名称无效');return;}
+    state.matrix=next;state.result.matrix=state.matrix;input.value='';
+    persistMatrix();renderMatrix();
+  }
+  function copyMatrix(format){
+    if(!state.matrix)return;
+    const rows=matrixRows();let text='';
+    if(format==='tsv')text=ReviewMatrix.toTSV(state.matrix,rows);
+    else if(format==='html')text=ReviewMatrix.toHTML(state.matrix,rows);
+    else text=ReviewMatrix.toLatex(state.matrix,rows);
+    try{z.Utilities.Internal.copyTextToClipboard(text);}
+    catch(e){alert('复制失败：'+(e.message||e));return;}
+    byId('matrixStatus').textContent=(format==='tsv'?'Excel / 表格 TSV':format==='html'?'Word HTML 表格':'LaTeX 表格')+' 已复制；可粘贴到目标编辑器。';
+  }
   function showTab(tab){
     for(const el of document.querySelectorAll('.tab'))el.classList.toggle('current',el.dataset.tab===tab);
-    const views={gaps:'gapView',evidence:'evidenceView',draft:'draftView'};
-    for(const id of ['gapView','evidenceView','draftView'])byId(id).classList.toggle('hidden',id!==views[tab]);
+    const views={gaps:'gapView',matrix:'matrixView',evidence:'evidenceView',draft:'draftView'};
+    for(const id of ['gapView','matrixView','evidenceView','draftView'])byId(id).classList.toggle('hidden',id!==views[tab]);
+    if(tab==='matrix')renderMatrix();
+  }
+  function gapVerificationText(g){
+    if(g?.verificationStatus==='verified')return '引句与论文归属已核验；语义仍需人工判断';
+    if(g?.verificationStatus==='partial')return '部分引句已核验，支持关系不完整';
+    return '没有可用的已核验引句';
+  }
+  function gapMismatchText(g){
+    const v=g?.sourceVerification||{};
+    const parts=[];
+    if(v.unknownEvidenceIds?.length)parts.push('未知证据 ID：'+v.unknownEvidenceIds.join(', '));
+    if(v.unverifiedEvidenceIds?.length)parts.push('未核验证据：'+v.unverifiedEvidenceIds.join(', '));
+    if(v.ambiguousEvidenceIds?.length)parts.push('重复归属证据：'+v.ambiguousEvidenceIds.join(', '));
+    if(v.invalidPaperIds?.length)parts.push('未知论文 ID：'+v.invalidPaperIds.join(', '));
+    if(v.unsupportedDeclaredPaperIds?.length)parts.push('声明但没有有效引句的论文：'+v.unsupportedDeclaredPaperIds.join(', '));
+    if(v.unlistedEvidencePaperIds?.length)parts.push('有引句但未声明的论文：'+v.unlistedEvidencePaperIds.join(', '));
+    return parts;
+  }
+  async function reverseSearchGap(g, resultBox, trigger){
+    if(!state.result||state.busy||state.gapSearchBusy)return;
+    state.gapSearchBusy=true;
+    document.querySelectorAll('.gap-reverse-search').forEach(button=>{button.disabled=true;});
+    trigger.textContent='正在反向检索…';clear(resultBox);
+    resultBox.appendChild(elm('p','subtle','检索可能已经处理该问题的 Zotero 条目与 OpenAlex 研究输出…'));
+    try{
+      const excluded=state.result.analyses.filter(a=>!a.skipped).map(a=>a.paper?.itemID||a.paper?.openAlexID||a.paper?.doi||a.paper?.title);
+      const found=await rt.searchGapCandidates(g,state.result.question,excluded,onProgress);
+      clear(resultBox);
+      resultBox.appendChild(elm('p','subtle','检索式：'+found.query));
+      if(found.errors?.length)resultBox.appendChild(elm('p','note-label','部分检索失败：'+found.errors.join('；')));
+      if(!found.candidates.length){resultBox.appendChild(elm('p','empty','没有返回新的候选研究。该结果不能证明领域中不存在反例。'));return;}
+      for(const candidate of found.candidates.slice(0,12)){
+        const row=elm('div','gap-search-candidate');
+        const source=candidate.source==='local'?'Zotero 库':'OpenAlex 候选';
+        row.appendChild(elm('strong',null,candidate.title||'无标题'));
+        row.appendChild(elm('span','subtle',`${source} · ${candidate.year||'年份未知'} · 相关度 ${candidate.relevance||0}`));
+        if(candidate.doi)row.appendChild(elm('span','subtle','DOI '+candidate.doi));
+        const add=elm('button','btn secondary',isIncluded(candidate)?'✓ 已加入待分析选文':'加入待分析选文');
+        add.type='button';add.disabled=isIncluded(candidate)||state.busy;
+        add.addEventListener('click',()=>{
+          setIncluded(candidate,true);add.disabled=true;add.textContent='✓ 已加入待分析选文';
+          resultBox.appendChild(elm('p','note-label','已加入左侧选文；下一次分析会把它纳入证据池。'));
+        });
+        row.appendChild(add);
+        resultBox.appendChild(row);
+      }
+      resultBox.appendChild(elm('p','note-label','候选论文只用于反向核验；加入待分析选文后仍需重新运行全文证据分析，不能把检索结果直接当作 Gap 证据。'));
+    }catch(e){clear(resultBox);resultBox.appendChild(elm('p','note-label','反向检索失败：'+(e.message||e)));}
+    finally{state.gapSearchBusy=false;document.querySelectorAll('.gap-reverse-search').forEach(button=>{button.disabled=state.busy;});trigger.textContent='再次反向检索';}
+  }
+  function setGapReviewStatus(g,status){
+    if(!g||g.findingType!=='possible_gap')return;
+    if(status==='accepted'&&!g.sourceVerified){alert('这条 Gap 还没有完成逐条引句核验，不能纳入初稿。');return;}
+    g.reviewStatus=status;
+    g.needsHumanReview=status==='pending'||!g.sourceVerified;
+    if(state.result){
+      void rt.saveProjectSnapshot(state.result).catch(e=>log('保存 Gap 审核状态失败：'+e.message));
+      renderGaps(state.result);updateRunOverview();
+    }
+  }
+  function setGapClaim(g, claim){
+    if(!g||g.findingType!=='possible_gap')return;
+    const value=String(claim==null?'':claim).trim().slice(0,2400);
+    if(!value){alert('论断不能为空。');return false;}
+    if(value===String(g.claim||'').trim())return true;
+    g.claim=value;
+    // Editing the scientific wording invalidates a prior acceptance decision:
+    // the revised statement must pass the same evidence review again.
+    g.reviewStatus='pending';g.needsHumanReview=true;g.editedByResearcher=true;
+    if(state.result){
+      void rt.saveProjectSnapshot(state.result).catch(e=>log('保存 Gap 论断失败：'+e.message));
+      renderGaps(state.result);updateRunOverview();
+    }
+    return true;
   }
   function appendClaimsGroup(root,title,claims,known,evidence){
     if(!Array.isArray(claims)||!claims.length)return;
     root.appendChild(elm('h3','group-heading',title));
     claims.forEach((g,i)=>{
       const c=elm('article','gap-card');
-      c.appendChild(elm('h3',null,`${i+1}. ${g.claim||String(g)}`));
+      const heading=elm('h3',null,`${i+1}. ${g.claim||String(g)}`);
+      c.appendChild(heading);
       const refs=(g.paperIds||[]).filter(x=>known.has(x));
-      c.appendChild(elm('div','note-label',`${g.status||'需核验'} · 支持文献 ${refs.length} 篇 · ${refs.map(x=>'['+x+']').join(', ')||'未提供可靠 ID'}`));
+      const statusLabel=g.reviewStatus==='accepted'?'已接受纳入初稿':g.reviewStatus==='rejected'?'已否决，不纳入初稿':'待人工审核';
+      c.appendChild(elm('div','note-label',`${g.status||'需核验'} · ${gapVerificationText(g)} · ${statusLabel} · 支持文献 ${refs.length} 篇 · ${refs.map(x=>'['+x+']').join(', ')||'未提供可靠 ID'}`));
+      const mismatch=gapMismatchText(g);
+      if(mismatch.length){
+        const box=elm('div','gap-validation-warning');
+        box.appendChild(elm('strong',null,'证据归属需要修正'));
+        mismatch.forEach(item=>box.appendChild(elm('div',null,item)));
+        c.appendChild(box);
+      }
+      if(g.findingType==='possible_gap'){
+        const actions=elm('div','gap-review-actions');
+        const edit=elm('button','btn text','修改论断');edit.type='button';edit.disabled=state.busy;
+        const editor=elm('div','gap-edit-panel');editor.hidden=true;
+        const input=elm('textarea',null);input.value=String(g.claim||'');input.maxLength=2400;
+        input.setAttribute('aria-label','修改 Research Gap 论断');
+        const editorActions=elm('div','gap-edit-actions');
+        const save=elm('button','btn secondary','保存修改');save.type='button';save.disabled=state.busy;
+        const cancel=elm('button','btn text','取消');cancel.type='button';cancel.disabled=state.busy;
+        save.addEventListener('click',()=>{if(setGapClaim(g,input.value))editor.hidden=true;});
+        cancel.addEventListener('click',()=>{input.value=String(g.claim||'');editor.hidden=true;});
+        editorActions.appendChild(save);editorActions.appendChild(cancel);
+        editor.appendChild(input);editor.appendChild(editorActions);
+        edit.addEventListener('click',()=>{editor.hidden=false;input.focus();input.select();});
+        actions.appendChild(edit);
+        const accept=elm('button','btn secondary',g.reviewStatus==='accepted'?'✓ 已接受':'接受并纳入初稿');
+        accept.type='button';accept.disabled=state.busy||!g.sourceVerified||g.reviewStatus==='accepted';
+        accept.title=g.sourceVerified?'接受后才会进入下一次初稿生成':'先完成逐条引句核验';
+        accept.addEventListener('click',()=>setGapReviewStatus(g,'accepted'));
+        actions.appendChild(accept);
+        const reject=elm('button','btn text',g.reviewStatus==='rejected'?'已否决':'否决');
+        reject.type='button';reject.disabled=state.busy||g.reviewStatus==='rejected';
+        reject.addEventListener('click',()=>setGapReviewStatus(g,'rejected'));
+        actions.appendChild(reject);
+        if(g.reviewStatus!=='pending'){
+          const reset=elm('button','btn text','恢复待审');reset.type='button';reset.disabled=state.busy;
+          reset.addEventListener('click',()=>setGapReviewStatus(g,'pending'));actions.appendChild(reset);
+        }
+        const reverse=elm('button','btn text gap-reverse-search','反向检索可能已解决该 Gap');reverse.type='button';reverse.disabled=state.busy||state.gapSearchBusy;
+        const results=elm('div','gap-search-results');results.hidden=true;
+        reverse.addEventListener('click',()=>{results.hidden=false;void reverseSearchGap(g,results,reverse)});
+        actions.appendChild(reverse);c.appendChild(actions);c.appendChild(editor);c.appendChild(results);
+      }
       if(g.evidenceIds?.length){
         const container=elm('div','gap-cites');
         for(const id of g.evidenceIds.slice(0,16)){
@@ -937,7 +1199,7 @@
   }
   function showResults(result){
     byId('resultsPanel').classList.remove('hidden');
-    renderGaps(result);renderEvidence(result);
+    renderGaps(result);renderEvidence(result);initMatrix(result);
     byId('draftOutput').value=result.draft||'';
     byId('copyDraftBtn').disabled=!result.draft;
     byId('saveNoteBtn').disabled=!result.draft;
@@ -993,6 +1255,15 @@
     byId('localSearchBtn').addEventListener('click',()=>void discovery('local'));
     byId('onlineSearchBtn').addEventListener('click',()=>void discovery('online'));
     byId('autoDiscoverBtn').addEventListener('click',()=>void discovery('both'));
+    byId('refreshMatrixBtn').addEventListener('click',refreshMatrix);
+    byId('clearMatrixEditsBtn').addEventListener('click',clearMatrixEdits);
+    byId('addMatrixColumnBtn').addEventListener('click',addMatrixColumn);
+    byId('copyMatrixTSVBtn').addEventListener('click',()=>copyMatrix('tsv'));
+    byId('copyMatrixHTMLBtn').addEventListener('click',()=>copyMatrix('html'));
+    byId('copyMatrixLatexBtn').addEventListener('click',()=>copyMatrix('latex'));
+    byId('matrixFilter').addEventListener('input',renderMatrix);
+    byId('matrixSort').addEventListener('change',renderMatrix);
+    byId('matrixOnlyMissing').addEventListener('change',renderMatrix);
     byId('runBtn').addEventListener('click',()=>void startAnalysis(false));
     byId('restoreCheckpointBtn').addEventListener('click',()=>void restoreLatestCheckpoint());
     byId('resumeCheckpointBtn').addEventListener('click',()=>void startAnalysis(true));
