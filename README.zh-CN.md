@@ -1,4 +1,9 @@
-# Zotero Review Studio v0.5.3（Zotero 7 综述研究工作台）
+# Zotero Review Studio v0.5.4（Zotero 7 综述研究工作台）
+
+## v0.5.4：诊断独立代理的 ChatGPT 403
+
+- 保留脱敏后的 HTTP 错误摘要、安全响应头和请求 ID，区分代理拦截页与 ChatGPT 套餐、地区或账号权限限制。
+- 针对 HTTP CONNECT 和 SOCKS5 远程 DNS 分别给出检查提示；OAuth 登录后模型目录读取失败的原因也会保留在设置面板。
 
 ## v0.5.3：修复 ChatGPT 令牌交换并显示服务商预设
 
@@ -140,7 +145,7 @@ python3 tests/browser_smoke.py  # 需要 Playwright + Chromium
 python3 scripts/build_xpi.py
 ```
 
-XPI 输出位于 `dist/zotero-review-studio-0.5.3.xpi`。无需 npm 安装。
+XPI 输出位于 `dist/zotero-review-studio-0.5.4.xpi`。无需 npm 安装。
 
 MIT License.
 
