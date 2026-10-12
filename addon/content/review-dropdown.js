@@ -13,6 +13,31 @@ var ReviewDropdown = (function () {
     if(text!==undefined)x.textContent=text;
     return x;
   };
+  // The dialog is an XHTML subtree inside a XUL window.  Zotero's global
+  // XUL skin can win over a stylesheet selector for native form controls,
+  // so the source select is hidden inline as well as by review.css.  Keeping
+  // it in the DOM preserves the existing change handlers and option model.
+  function hideSourceSelect(select){
+    select.classList.add('rs-native-select');
+    select.tabIndex=-1;
+    select.setAttribute('aria-hidden','true');
+    select.style.setProperty('display','none','important');
+    select.style.setProperty('visibility','hidden','important');
+    select.style.setProperty('pointer-events','none','important');
+  }
+  function sourceSelects(){
+    const found=[];const seen=new Set();
+    const add=list=>{for(const select of Array.from(list||[])){
+      if(!seen.has(select)){seen.add(select);found.push(select);}
+    }};
+    // In Zotero the dialog is XHTML embedded in a XUL document.  The
+    // namespace-aware lookup is required on Gecko XML documents; the CSS
+    // selector alone can miss html:select elements there.
+    try{add(document.getElementsByTagNameNS(HTML,'select'));}catch(_){ }
+    try{add(document.querySelectorAll('select'));}catch(_){ }
+    try{add(document.querySelectorAll('[local-name="select"]'));}catch(_){ }
+    return found;
+  }
   const optionsOf=select=>Array.from(select.options||[]).filter(o=>!o.hidden);
 
   function refresh(select){
@@ -49,6 +74,10 @@ var ReviewDropdown = (function () {
     opts.forEach((opt,i)=>{
       const b=make('button','rs-dropdown-option',opt.textContent.trim());
       b.type='button'; b.setAttribute('role','option');
+      // Reset platform button skin explicitly.  Without this, the XUL
+      // theme may paint a transparent/native option surface above the portal.
+      b.style.setProperty('appearance','none');
+      b.style.setProperty('-moz-appearance','none');
       b.id='rs-option-'+entry.select.id+'-'+i;
       b.setAttribute('aria-selected',String(opt.value===entry.select.value));
       b.disabled=opt.disabled;
@@ -111,12 +140,13 @@ var ReviewDropdown = (function () {
     const btn=make('button','rs-picker-button');
     btn.type='button';btn.setAttribute('aria-haspopup','listbox');
     btn.setAttribute('aria-expanded','false');
+    btn.style.setProperty('appearance','none');
+    btn.style.setProperty('-moz-appearance','none');
     const label=select.getAttribute('aria-label')||select.id||'选择';
     btn.setAttribute('aria-label',label);
     select.parentNode.insertBefore(shell,select);
     shell.appendChild(select); shell.appendChild(btn);
-    select.classList.add('rs-native-select');
-    select.tabIndex=-1;
+    hideSourceSelect(select);
     widgets.set(select,{select,button:btn});
     btn.addEventListener('click',event=>{event.preventDefault();event.stopPropagation();open(select);});
     btn.addEventListener('keydown',event=>onKey(event,select));
@@ -135,8 +165,11 @@ var ReviewDropdown = (function () {
     portal=make('div','rs-dropdown-portal hidden');
     portal.setAttribute('role','listbox');
     portal.setAttribute('aria-label','下拉选项');
+    portal.style.setProperty('appearance','none');
+    portal.style.setProperty('-moz-appearance','none');
+    portal.style.setProperty('pointer-events','auto');
     document.documentElement.appendChild(portal);
-    for(const select of document.querySelectorAll('select')) mount(select);
+    for(const select of sourceSelects()) mount(select);
     document.addEventListener('pointerdown',event=>{
       if(active && !portal.contains(event.target) && !active.button.contains(event.target))close();
     },true);

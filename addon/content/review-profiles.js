@@ -18,13 +18,62 @@ var ReviewProfiles = (function () {
   ]);
 
   function preset(id) { return PRESETS.find(p=>p.id===id)||PRESETS[0]; }
+  function normalizedEndpoint(value) {
+    return String(value||'').trim().replace(/\/+$/,'').toLowerCase();
+  }
+  // Older releases stored one endpoint/model pair instead of a named provider.
+  // Recover a known provider from that endpoint so a saved DeepSeek/Qwen/etc.
+  // configuration remains identifiable after the ChatGPT profile was added.
+  function providerFromEndpoint(endpoint) {
+    const value=normalizedEndpoint(endpoint);
+    if(!value)return '';
+    const exact=PRESETS.find(p=>!['chatgpt','custom'].includes(p.id)&&normalizedEndpoint(p.endpoint)===value);
+    if(exact)return exact.id;
+    try {
+      const host=new URL(value).hostname;
+      const aliases=[
+        ['deepseek',['api.deepseek.com']],
+        ['qwen',['dashscope.aliyuncs.com']],
+        ['siliconflow',['api.siliconflow.cn']],
+        ['openrouter',['openrouter.ai']],
+        ['ollama',['127.0.0.1','localhost','[::1]']],
+        ['lmstudio',['127.0.0.1','localhost','[::1]']],
+      ];
+      for(const [id,hosts] of aliases){
+        if(hosts.includes(host)){
+          if(id==='ollama'&&!value.includes(':11434/'))continue;
+          if(id==='lmstudio'&&!value.includes(':1234/'))continue;
+          return id;
+        }
+      }
+    } catch (_) {}
+    return '';
+  }
+  function providerFor(rawProvider,endpoint) {
+    const explicit=PRESETS.find(p=>p.id===rawProvider);
+    const inferred=providerFromEndpoint(endpoint);
+    if(!explicit)return inferred||((endpoint)?'openai':'chatgpt');
+    // A v0.3 endpoint migrated as OpenAI can still point at DeepSeek or
+    // another known service. Repair that label while leaving custom OpenAI
+    // compatible endpoints untouched.
+    if(explicit.id==='openai'&&inferred&&inferred!=='openai')return inferred;
+    return explicit.id;
+  }
   function generateId() { return 'api-'+Date.now().toString(36)+'-'+Math.random().toString(36).slice(2,8); }
   function sanitize(raw, index=0) {
     const p=raw&&typeof raw==='object'?raw:{};
-    const base=preset(p.provider||(p.endpoint?'openai':'chatgpt'));
+    const provider=providerFor(p.provider,p.endpoint);
+    const base=preset(provider);
+    let name=String(p.name||base.name+' '+(index+1)).trim().slice(0,70);
+    // A profile migrated by v0.4 may already be stored as "OpenAI · 默认"
+    // even though its endpoint identifies DeepSeek (or another known service).
+    // Update only these generated migration names; user-assigned names remain.
+    if(provider!==(PRESETS.find(x=>x.id===p.provider)?.id||p.provider)
+      && /^OpenAI(?: · (?:默认|原有配置))?$/.test(name))
+      name=base.name+' · 原有配置';
     return {
       id: typeof p.id==='string'&&/^[a-zA-Z0-9_-]{3,90}$/.test(p.id)?p.id:generateId(),
-      name: String(p.name||base.name+' '+(index+1)).trim().slice(0,70),
+      name,
       provider:base.id,
       endpoint:String(p.endpoint!==undefined?p.endpoint:base.endpoint).trim().slice(0,2000),
       model:String(p.model!==undefined?p.model:base.model).trim().slice(0,180),
@@ -59,11 +108,15 @@ var ReviewProfiles = (function () {
         const fresh=create('chatgpt','ChatGPT · 官网账号（默认）');
         return {profiles:[fresh],activeId:fresh.id,migratedKey:''};
       }
-      const migrated=create('openai','OpenAI · 原有配置');
+      const provider=providerFromEndpoint(legacyEndpoint)||'openai';
+      const migrated=create(provider,provider==='openai'?'OpenAI · 原有配置':preset(provider).name+' · 原有配置');
       if(legacyEndpoint)migrated.endpoint=legacyEndpoint;
       if(legacyModel)migrated.model=legacyModel;
       migrated.rememberKey=!!legacyKey;
-      return {profiles:[migrated],activeId:migrated.id,migratedKey:legacyKey};
+      // Keep the existing compatible API active while adding the official
+      // ChatGPT account as a separate option during the upgrade.
+      const chatgpt=create('chatgpt','ChatGPT · 官网账号');
+      return {profiles:[migrated,chatgpt],activeId:migrated.id,migratedKey:legacyKey};
     }
     const ids=new Set();
     const profiles=all.slice(0,30).map(sanitize).filter(p=>{if(ids.has(p.id))return false;ids.add(p.id);return true;});
