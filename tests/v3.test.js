@@ -33,7 +33,7 @@ async function testProxy(){
     '@mozilla.org/io/string-input-stream;1':{createInstance:()=>({setUTF8Data(t){call.push({kind:'upload',text:t});}})},
     '@mozilla.org/binaryinputstream;1':{createInstance:()=>({setInputStream(input){this.input=input},readByteArray(n){return [...this.input.bytes].slice(0,n)}})},
   };
-  let seq=0;
+  let seq=0, responseMode='ok';
   global.Components={classes:cc,interfaces:ci,results:{NS_ERROR_NET_TIMEOUT:1,NS_ERROR_FAILURE:2}};
   global.ChromeUtils={generateQI:()=>()=>true};
   global.Services={
@@ -42,11 +42,19 @@ async function testProxy(){
       newChannelFromURI:()=>({loadInfo:'system'}),
       getProtocolHandler:()=>({QueryInterface:()=>({newProxiedChannel:(_uri,p)=>{
         call.push({kind:'channel',proxy:p});
-        const channel={responseStatus:200,headers:{},QueryInterface:()=>channel,
+        const channel={responseStatus:responseMode==='forbidden'?403:200,headers:{},QueryInterface:()=>channel,
+          visitResponseHeaders(visitor){
+            if(responseMode==='forbidden'){
+              visitor.visitHeader('Server','Clash');
+              visitor.visitHeader('Content-Type','text/html');
+            }
+          },
           explicitSetUploadStream(_stream,_contentType,length,method,streamHasHeaders){call.push({kind:'explicit-upload',length,method,streamHasHeaders});},
           setRequestHeader(k,v){channel.headers[k]=v},cancel(){},
           asyncOpen(listener){
-            const bytes=new TextEncoder().encode(JSON.stringify({ok:true,seq:++seq}));
+            const bytes=new TextEncoder().encode(responseMode==='forbidden'
+              ? '<!doctype html><title>403 Forbidden</title><p>Blocked by Clash</p>'
+              : JSON.stringify({ok:true,seq:++seq}));
             queueMicrotask(()=>{listener.onStartRequest(channel);listener.onDataAvailable(channel,{bytes},0,bytes.length);listener.onStopRequest(channel,0)});
           }};
         return channel;
@@ -93,6 +101,27 @@ async function testProxy(){
     const upload=call.find(x=>x.kind==='fallback-upload');
     assert.equal(upload.contentType,'application/x-www-form-urlencoded');
     assert.equal(upload.streamHasHeaders,false);
+
+    // A 403 with an HTML/proxy signature must retain a short, actionable
+    // diagnostic while keeping the raw body bounded in error.xmlhttp.
+    responseMode='forbidden';
+    await assert.rejects(
+      Network.request(zotero,'GET','https://api.example.test/',{},custom),
+      error=>{
+        assert.equal(error.status,403);
+        assert.equal(error.proxyResponse,true);
+        assert.match(error.message,/疑似代理拦截页/);
+        assert.match(error.message,/Blocked by Clash/);
+        assert.equal(error.xmlhttp.responseHeaders.server,'Clash');
+        assert(error.xmlhttp.responseText.length<1200);
+        return true;
+      });
+    responseMode='ok';
+    assert.match(Network.formatHTTPError(403,
+      JSON.stringify({detail:'Serving region is not permitted'}),
+      {'content-type':'application/json'}, {mode:'custom'}),
+      /Serving region is not permitted/,
+      'Direct-admission detail responses must remain actionable');
     global.Services.io.newChannelFromURI=oldChannelFactory;
     zotero.HTTP.request=oldHTTPRequest;
   }finally {delete global.Components;delete global.ChromeUtils;delete global.Services;}
