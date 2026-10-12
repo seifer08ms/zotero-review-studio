@@ -22,6 +22,14 @@ assert.throws(()=>P.effectiveEndpoint({...local,gatewayEndpoint:'http://public.e
 assert.throws(()=>P.effectiveEndpoint({...local,gatewayEndpoint:'https://alice:pw@proxy.example/v1/chat/completions'}),/账号或密码/);
 assert.throws(()=>P.effectiveEndpoint({...local,gatewayEndpoint:'https://proxy.example/v1/messages'}),/Chat Completions/);
 assert.equal(P.PRESETS.length,9);
+const presetOptions=P.presetOptions();
+assert.equal(presetOptions.length,P.PRESETS.length);
+for(const provider of ['openai','deepseek','qwen','siliconflow','openrouter','ollama','lmstudio','custom']){
+  const option=presetOptions.find(x=>x.provider===provider);
+  assert(option,`Missing selectable preset: ${provider}`);
+  assert.match(option.value,/^__reviewstudio_preset__/);
+  assert.match(option.label,/新建配置/);
+}
 const firstTime=P.load(()=>null);
 assert.equal(firstTime.profiles[0].provider,'chatgpt');
 assert.equal(P.effectiveEndpoint(firstTime.profiles[0]),'https://api.openai.com/v1/responses');

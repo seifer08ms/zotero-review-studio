@@ -1,4 +1,9 @@
-# Zotero Review Studio v0.5.2（Zotero 7 综述研究工作台）
+# Zotero Review Studio v0.5.3（Zotero 7 综述研究工作台）
+
+## v0.5.3：修复 ChatGPT 令牌交换并显示服务商预设
+
+- 修正 Zotero/Gecko 中 ChatGPT OAuth 令牌交换所使用的上传流参数，同时兼容旧版 Zotero。
+- 在 API 配置管理菜单中直接显示 DeepSeek、通义千问、SiliconFlow、OpenRouter、Ollama、LM Studio 和自定义接口的新建选项。
 
 ## v0.5.2：恢复兼容 API 配置并修复 XUL 下拉挂载
 
@@ -135,7 +140,7 @@ python3 tests/browser_smoke.py  # 需要 Playwright + Chromium
 python3 scripts/build_xpi.py
 ```
 
-XPI 输出位于 `dist/zotero-review-studio-0.5.2.xpi`。无需 npm 安装。
+XPI 输出位于 `dist/zotero-review-studio-0.5.3.xpi`。无需 npm 安装。
 
 MIT License.
 

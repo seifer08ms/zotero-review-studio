@@ -213,6 +213,7 @@
     if(state.sessionKeys.has(p.id)) return state.sessionKeys.get(p.id)||'';
     return p.rememberKey ? String(rt.getPref('profileSecret.'+p.id,'')||'') : '';
   }
+  const PRESET_OPTION_PREFIX=ReviewProfiles.PRESET_OPTION_PREFIX||'__reviewstudio_preset__';
   function refreshDropdowns(){ReviewDropdown?.refreshAll?.();}
   function fillProfileSelectors() {
     for(const id of ['apiProfileSelect','activeProfileQuick']) {
@@ -221,6 +222,23 @@
         const option=elm('option',null,ReviewProfiles.label(p));
         option.value=p.id;
         select.appendChild(option);
+      }
+      // The profile list contains saved configurations, while the provider
+      // presets are otherwise several fields lower in the settings form. Add
+      // direct "new from preset" entries to the management selector so a
+      // fresh installation can reach DeepSeek/Qwen/etc. without guessing
+      // that it must first create a blank profile and scroll down.
+      if(id==='apiProfileSelect'){
+        const divider=elm('option',null,'— 新建服务商配置 —');
+        divider.disabled=true;
+        divider.value='';
+        select.appendChild(divider);
+        for(const preset of ReviewProfiles.presetOptions()){
+          const option=elm('option',null,preset.label);
+          option.value=preset.value;
+          option.dataset.presetProvider=preset.provider;
+          select.appendChild(option);
+        }
       }
       select.value=state.activeAPIId;
     }
@@ -437,14 +455,16 @@
     byId('settingsStatus').textContent='已切换至 '+activeProfile().name+'；发送论文前需重新确认数据传输同意';
     updateRunOverview();
   }
-  function addAPIProfile(clone=false){
+  function addAPIProfile(clone=false,provider='chatgpt'){
     if(state.busy||state.apiProfiles.length>=30){alert('最多可保存 30 套 API 配置');return;}
     saveSettings({silent:true});
     const current=activeProfile();
     const p=clone
       ?ReviewProfiles.sanitize({...current,id:ReviewProfiles.create(current.provider).id,
         name:current.name+' · 副本',rememberKey:false})
-      :ReviewProfiles.create('chatgpt','新模型配置 '+(state.apiProfiles.length+1));
+      :ReviewProfiles.create(provider,provider==='chatgpt'
+        ?'新模型配置 '+(state.apiProfiles.length+1)
+        :ReviewProfiles.preset(provider).name+' · 新配置');
     state.apiProfiles.push(p);
     state.activeAPIId=p.id;
     state.sessionKeys.set(p.id,''); // cloning intentionally excludes credentials
@@ -1216,7 +1236,14 @@
     byId('signInChatGPT').addEventListener('click',()=>void loginChatGPT());
     byId('signOutChatGPT').addEventListener('click',()=>void logoutChatGPT());
     byId('refreshChatGPTModels').addEventListener('click',()=>void listChatGPTModels());
-    byId('apiProfileSelect').addEventListener('change',()=>switchAPI(byId('apiProfileSelect').value));
+    byId('apiProfileSelect').addEventListener('change',()=>{
+      const value=byId('apiProfileSelect').value;
+      if(value.startsWith(PRESET_OPTION_PREFIX)){
+        addAPIProfile(false,value.slice(PRESET_OPTION_PREFIX.length));
+        return;
+      }
+      switchAPI(value);
+    });
     byId('activeProfileQuick').addEventListener('change',()=>switchAPI(byId('activeProfileQuick').value));
     byId('addAPIProfile').addEventListener('click',()=>addAPIProfile(false));
     byId('cloneAPIProfile').addEventListener('click',()=>addAPIProfile(true));
