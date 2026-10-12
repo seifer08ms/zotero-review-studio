@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.5.2 — restore compatible API profiles and fix XUL dropdown mounting
+
+- Hides the native XHTML/XUL select layer before showing the custom opaque popup, preventing duplicate transparent options from overlapping the settings panel.
+- Preserves and repairs DeepSeek, Qwen, SiliconFlow, OpenRouter, Ollama and LM Studio profiles during migration, while adding ChatGPT as a separate account option.
+
 ## 0.5.1 — opaque Zotero dropdowns
 
 - Forces an opaque background for the in-dialog dropdown surface and each option in Zotero's XUL environment, with dark-scheme colors and regression checks for transparent rendering.

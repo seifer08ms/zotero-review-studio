@@ -5,8 +5,10 @@ const stored={};
 const get=(key,fallback)=>stored[key]??values[key]??fallback;
 const set=(key,val)=>{stored[key]=val;};
 const migrated=P.load(get);
-assert.equal(migrated.profiles.length,1);
+assert.equal(migrated.profiles.length,2);
 assert.equal(migrated.profiles[0].model,'old-model');
+assert.equal(migrated.profiles[0].provider,'openai');
+assert.equal(migrated.profiles[1].provider,'chatgpt');
 assert.equal(migrated.migratedKey,'legacy-key');
 P.save(set,migrated.profiles,migrated.activeId);
 assert(!stored.apiProfiles.includes('legacy-key'),'Do not serialize keys in profiles JSON');
@@ -31,5 +33,12 @@ const actual=P.load(key=>key==='apiProfiles'?JSON.stringify([configured]):key===
 assert.equal(actual.profiles.find(p=>p.id===configured.id).provider,'deepseek');
 assert.equal(actual.activeId,configured.id);
 assert.equal(P.sanitize({id:'legacy-123',endpoint:'https://example.com/v1/chat/completions'}).provider,'openai', 'An older profile without provider must not be silently reclassified as ChatGPT');
+assert.equal(P.sanitize({id:'legacy-deepseek',endpoint:'https://api.deepseek.com/chat/completions',model:'deepseek-chat'}).provider,'deepseek', 'Legacy DeepSeek endpoints must retain their provider');
+assert.equal(P.sanitize({id:'migrated-deepseek',provider:'openai',endpoint:'https://api.deepseek.com/chat/completions',model:'deepseek-chat'}).provider,'deepseek', 'Previously mislabelled DeepSeek profiles must be repaired');
+assert.equal(P.sanitize({id:'named-migrated-deepseek',provider:'openai',name:'OpenAI · 默认',endpoint:'https://api.deepseek.com/chat/completions',model:'deepseek-chat'}).name,'DeepSeek · 原有配置');
+const legacyDeepseek=P.load(key=>({endpoint:'https://api.deepseek.com/chat/completions',model:'deepseek-chat',apiKey:'legacy-key'}[key]??null));
+assert.equal(legacyDeepseek.profiles[0].provider,'deepseek');
+assert.match(legacyDeepseek.profiles[0].name,/DeepSeek/);
+assert.equal(legacyDeepseek.profiles[0].endpoint,'https://api.deepseek.com/chat/completions');
 assert(actual.profiles.some(p=>p.provider==='chatgpt'));// Added during upgrade without resetting the existing active API
 console.log('API profiles: presets, migration, gateway, validation, key separation passed');

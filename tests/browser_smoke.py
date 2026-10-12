@@ -7,6 +7,8 @@ content = (root/'tests/ui-smoke.html').read_text()
 
 def pick(page, element_id, value):
     select=page.locator('#'+element_id)
+    hidden=select.evaluate("el=>({display:getComputedStyle(el).display,visibility:getComputedStyle(el).visibility,ariaHidden:el.getAttribute('aria-hidden')})")
+    assert hidden['display']=='none' and hidden['visibility']=='hidden' and hidden['ariaHidden']=='true',hidden
     label=select.locator('option').evaluate_all('(opts, value) => (opts.find(o=>o.value===value)||{}).textContent',value)
     if not label:
         raise AssertionError(f'Missing value {value} in {element_id}')
