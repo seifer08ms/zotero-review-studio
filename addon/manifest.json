@@ -1,7 +1,7 @@
 {
   "manifest_version": 2,
   "name": "Zotero Review Studio",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "Evidence-grounded multi-paper literature reviews, research gap analysis, Zotero library and OpenAlex discovery.",
   "author": "seifer08ms / Review Studio contributors",
   "applications": {

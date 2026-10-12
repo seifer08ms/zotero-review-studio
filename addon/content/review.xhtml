@@ -10,7 +10,7 @@
       <html:div class="brand">
         <html:div class="brand-icon">R</html:div>
         <html:div>
-          <html:h1>Review Studio <html:span class="version">v0.4.0</html:span></html:h1>
+          <html:h1>Review Studio <html:span class="version">v0.5.0</html:span></html:h1>
           <html:p>多论文证据分析 · Research Gap · 综述初稿</html:p>
         </html:div>
       </html:div>
@@ -219,6 +219,7 @@
         <html:section id="resultsPanel" class="results-panel hidden">
           <html:div class="result-tabs">
             <html:button class="tab current" data-tab="gaps" type="button">跨论文 Gap</html:button>
+            <html:button class="tab" data-tab="matrix" type="button">文献对比矩阵</html:button>
             <html:button class="tab" data-tab="evidence" type="button">单篇证据与来源</html:button>
             <html:button class="tab" data-tab="draft" type="button">综述初稿</html:button>
           </html:div>
@@ -231,6 +232,30 @@
             <html:span id="pageStatus" class="subtle">仅定位真实可匹配的原文引句；不会猜测期刊印刷页码</html:span>
           </html:div>
           <html:div id="gapView" class="result-view"></html:div>
+          <html:div id="matrixView" class="result-view hidden">
+            <html:div class="section-heading matrix-heading">
+              <html:div><html:h2>文献证据对比矩阵</html:h2><html:p class="helper">自动填充方法、局限和已核验引句；数据集、指标和定量结果保留为可编辑字段，避免把未观察到的信息当成模型事实。</html:p></html:div>
+              <html:div class="matrix-actions">
+                <html:button id="refreshMatrixBtn" class="btn secondary" type="button">更新矩阵</html:button>
+                <html:button id="clearMatrixEditsBtn" class="btn text" type="button">清除手工修改</html:button>
+              </html:div>
+            </html:div>
+            <html:div class="matrix-toolbar">
+              <html:label>筛选<html:input id="matrixFilter" type="search" placeholder="论文、方法、数据集或 Gap 关键词" /></html:label>
+              <html:label>排序<html:select id="matrixSort"></html:select></html:label>
+              <html:label class="checkline compact matrix-missing"><html:input id="matrixOnlyMissing" type="checkbox" />只看待补充字段</html:label>
+              <html:label class="matrix-add-column">新增比较维度<html:input id="matrixNewColumn" type="text" maxlength="60" placeholder="例如：是否开源" /></html:label>
+              <html:button id="addMatrixColumnBtn" class="btn secondary" type="button">添加维度</html:button>
+            </html:div>
+            <html:div class="matrix-export-bar">
+              <html:span class="subtle">复制后可直接粘贴到目标软件：</html:span>
+              <html:button id="copyMatrixTSVBtn" class="btn secondary" type="button">Excel / 表格 TSV</html:button>
+              <html:button id="copyMatrixHTMLBtn" class="btn secondary" type="button">Word HTML 表格</html:button>
+              <html:button id="copyMatrixLatexBtn" class="btn secondary" type="button">LaTeX 表格</html:button>
+            </html:div>
+            <html:p id="matrixStatus" class="subtle"></html:p>
+            <html:div id="matrixTableWrap" class="matrix-table-wrap"></html:div>
+          </html:div>
           <html:div id="evidenceView" class="result-view hidden"></html:div>
           <html:div id="draftView" class="result-view hidden">
             <html:div class="section-heading">
@@ -256,6 +281,7 @@
     </html:div>
   </html:div>
   <script src="chrome://zoteroreviewstudio/content/review-core.js"/>
+  <script src="chrome://zoteroreviewstudio/content/review-matrix.js"/>
   <script src="chrome://zoteroreviewstudio/content/review-profiles.js"/>
   <script src="chrome://zoteroreviewstudio/content/review-network.js"/>
   <script src="chrome://zoteroreviewstudio/content/review-chatgpt.js"/>

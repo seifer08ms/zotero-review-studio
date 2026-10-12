@@ -4,7 +4,7 @@ var ReviewCheckpoints=(function(){
   const VERSION=1;
   function signature(papers,question,settings){
     return JSON.stringify({question:String(question||'').trim(),papers:papers.map(p=>({source:p.source,itemID:p.itemID||null,openAlexID:p.openAlexID||null,doi:p.doi||'',title:p.title||''})),
-      extraction:{endpoint:settings.endpoint,model:settings.model,chunkChars:settings.chunkChars,maxCharsPerPaper:settings.maxCharsPerPaper,language:settings.language}});
+      extraction:{endpoint:settings.endpoint,model:settings.model,chunkChars:settings.chunkChars,maxCharsPerPaper:settings.maxCharsPerPaper,language:settings.language,matrixExtraction:settings.matrixExtraction===true}});
   }
   function sourceFingerprint(chunks){
     // Non-cryptographic fingerprint only for detecting edited/replaced PDFs at resume.
@@ -32,7 +32,8 @@ var ReviewCheckpoints=(function(){
     // Never copy the API key or proxy passwords into checkpoints.
     return {question:String(question||''),papers:JSON.parse(JSON.stringify(papers)),
       settings:{endpoint:settings.endpoint,model:settings.model,chunkChars:settings.chunkChars,
-        maxCharsPerPaper:settings.maxCharsPerPaper,language:settings.language,profileName:settings.profileName||''}};
+        maxCharsPerPaper:settings.maxCharsPerPaper,language:settings.language,
+        matrixExtraction:settings.matrixExtraction===true,profileName:settings.profileName||''}};
   }
   function createStore({io,dir,join}){
     if(!io||!dir||!join)throw new Error('缺少本地持久存储接口');

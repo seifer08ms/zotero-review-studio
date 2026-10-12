@@ -1,4 +1,4 @@
-"""Browser-only UI smoke: exercises in-document dropdowns and existing Gap workflows."""
+"""Browser-only UI smoke: exercises dropdowns, Gap review, matrix editing and evidence workflows."""
 from pathlib import Path
 from playwright.sync_api import sync_playwright, expect
 
@@ -61,6 +61,24 @@ with sync_playwright() as pw:
     page.locator('#runBtn').click()
     expect(page.locator('#resultsPanel')).to_be_visible(timeout=12000)
     expect(page.locator('#gapView')).to_contain_text('研究空白')
+    # A researcher can revise a Gap's wording; the edit returns it to pending
+    # review before it may enter a subsequent draft.
+    page.locator('#gapView .gap-review-actions .btn', has_text='修改论断').click()
+    page.locator('#gapView .gap-edit-panel textarea').fill('人工修订：跨区域拓扑泛化仍缺少独立验证')
+    page.locator('#gapView .gap-edit-actions .btn', has_text='保存修改').click()
+    expect(page.locator('#gapView')).to_contain_text('人工修订：跨区域拓扑泛化仍缺少独立验证')
+    page.locator('#gapView .gap-review-actions .btn', has_text='接受并纳入初稿').click()
+    expect(page.locator('#gapView')).to_contain_text('已接受纳入初稿')
+    # The comparison matrix supports editing, incremental refresh, and export.
+    page.locator('.tab[data-tab="matrix"]').click()
+    expect(page.locator('#matrixTableWrap .matrix-table tbody tr')).to_have_count(1)
+    dataset_cell=page.locator('#matrixTableWrap textarea[data-matrix-key="dataset"]').first
+    dataset_cell.fill('Smoke dataset')
+    page.locator('#refreshMatrixBtn').click()
+    expect(dataset_cell).to_have_value('Smoke dataset')
+    page.locator('#copyMatrixTSVBtn').click()
+    assert 'Smoke dataset' in page.evaluate('window.copied')
+    page.locator('.tab[data-tab="gaps"]').click()
     page.locator('#gapView .gap-cites button').first.click()
     expect(page.locator('#evidenceView details.evidence-paper[open] .evidence-line').first).to_be_visible()
     page.locator('#evidenceView details summary').click()

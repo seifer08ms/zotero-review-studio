@@ -1,4 +1,12 @@
-# Zotero Review Studio v0.4.0（Zotero 7 综述研究工作台）
+# Zotero Review Studio v0.5.0（Zotero 7 综述研究工作台）
+
+## v0.5.0：证据对比矩阵与 Research Gap 审核
+
+- 自动形成可编辑的跨论文证据对比矩阵，覆盖方法、关键假设、数据集、评价指标、定量结果、局限、原文引句和 PDF 文件页码。
+- 自动字段与人工修改分开保存，增量分析时保留人工修订，并支持筛选、排序、自定义比较维度以及 TSV、Word HTML、LaTeX 复制导出。
+- 每条潜在 Research Gap 都有待审核、接受和否决状态；只有用户接受且逐条引句和论文归属核验完整的 Gap 才会进入综述初稿和章节重写。
+- 可以直接修改 Gap 论断；修改后会自动恢复为待审核，避免把旧的接受决定带到新的科学表述上。
+- 可对单条 Gap 反向检索 Zotero 库与 OpenAlex，寻找可能已经解决该问题的候选研究；候选结果仍需人工纳入和全文分析。
 
 [![Build and Test](https://github.com/seifer08ms/zotero-review-studio/actions/workflows/build.yml/badge.svg)](https://github.com/seifer08ms/zotero-review-studio/actions/workflows/build.yml)
 [![最新版本](https://img.shields.io/github/v/release/seifer08ms/zotero-review-studio)](https://github.com/seifer08ms/zotero-review-studio/releases/latest)
@@ -9,7 +17,7 @@
 
 面向多篇论文的证据驱动型文献综述、Research Gap 分析与可复用综述写作模板。适用于大规模 Zotero 文献库：**只处理用户勾选的文献**，逐篇、分段分析，不批量读取全部馆藏 PDF。
 
-## v0.4.0：默认支持官网 ChatGPT 账号授权，无需 API Key
+## v0.4.0 基础能力：默认支持官网 ChatGPT 账号授权，无需 API Key
 
 **新安装时默认选择“ChatGPT 官网账号（无需 API Key）”。** 在“管理 API / 设置”中点击**使用 ChatGPT 登录**，会打开系统浏览器的 OpenAI 官方授权页面。符合官方资格的 ChatGPT Plus / Pro 用户可以授权本开源插件使用套餐中的一部分模型用量，**无需另行购买普通 API Key**。是否具备权限、可用模型、额度和速率限制，以当前登录的 ChatGPT 账户及 OpenAI 官方规则为准。**不是无限免费调用**，也不是自动复用网页版/Codex 的登录 Cookie。
 
@@ -107,13 +115,15 @@ node tests/v3.test.js
 node tests/incremental_resume.test.js
 node tests/pipeline_equivalence.test.js
 node tests/performance.test.js
+node tests/gap-validation.test.js
+node tests/matrix.test.js
 python3 scripts/benchmark_ui.py  # 需要 Playwright + Chromium
 python3 scripts/make_browser_smoke.py
 python3 tests/browser_smoke.py  # 需要 Playwright + Chromium
 python3 scripts/build_xpi.py
 ```
 
-XPI 输出位于 `dist/zotero-review-studio-0.4.0.xpi`。无需 npm 安装。
+XPI 输出位于 `dist/zotero-review-studio-0.5.0.xpi`。无需 npm 安装。
 
 MIT License.
 
