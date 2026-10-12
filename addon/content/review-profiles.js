@@ -5,6 +5,7 @@
 var ReviewProfiles = (function () {
   'use strict';
 
+  const PRESET_OPTION_PREFIX='__reviewstudio_preset__';
   const PRESETS = Object.freeze([
     {id:'chatgpt',name:'ChatGPT 官网账号（无需 API Key）',endpoint:'https://api.openai.com/v1/responses',model:'gpt-6.1-sol'},
     {id:'openai',name:'OpenAI',endpoint:'https://api.openai.com/v1/chat/completions',model:'gpt-4.1-mini'},
@@ -18,6 +19,13 @@ var ReviewProfiles = (function () {
   ]);
 
   function preset(id) { return PRESETS.find(p=>p.id===id)||PRESETS[0]; }
+  function presetOptions() {
+    return PRESETS.map(p=>({
+      value:PRESET_OPTION_PREFIX+p.id,
+      provider:p.id,
+      label:'＋ '+p.name+'（新建配置）',
+    }));
+  }
   function normalizedEndpoint(value) {
     return String(value||'').trim().replace(/\/+$/,'').toLowerCase();
   }
@@ -164,6 +172,6 @@ var ReviewProfiles = (function () {
     const p=sanitize(profile);
     return p.name+' · '+p.model+(p.route==='gateway'?' · 网关':'')+(p.proxyMode==='custom'?' · 代理':p.proxyMode==='direct'?' · 直连':'');
   }
-  return {PRESETS,preset,create,load,save,sanitize,validate,effectiveEndpoint,label};
+  return {PRESETS,PRESET_OPTION_PREFIX,preset,presetOptions,create,load,save,sanitize,validate,effectiveEndpoint,label};
 })();
 if(typeof module!=='undefined'&&module.exports)module.exports=ReviewProfiles;

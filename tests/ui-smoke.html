@@ -253,7 +253,7 @@ window.PathUtils={join:(...a)=>a.join('/')};
       <div class="brand">
         <div class="brand-icon">R</div>
         <div>
-          <h1>Review Studio <span class="version">v0.5.2</span></h1>
+          <h1>Review Studio <span class="version">v0.5.3</span></h1>
           <p>多论文证据分析 · Research Gap · 综述初稿</p>
         </div>
       </div>
@@ -1459,6 +1459,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = ReviewMatr
 var ReviewProfiles = (function () {
   'use strict';
 
+  const PRESET_OPTION_PREFIX='__reviewstudio_preset__';
   const PRESETS = Object.freeze([
     {id:'chatgpt',name:'ChatGPT 官网账号（无需 API Key）',endpoint:'https://api.openai.com/v1/responses',model:'gpt-6.1-sol'},
     {id:'openai',name:'OpenAI',endpoint:'https://api.openai.com/v1/chat/completions',model:'gpt-4.1-mini'},
@@ -1472,6 +1473,13 @@ var ReviewProfiles = (function () {
   ]);
 
   function preset(id) { return PRESETS.find(p=>p.id===id)||PRESETS[0]; }
+  function presetOptions() {
+    return PRESETS.map(p=>({
+      value:PRESET_OPTION_PREFIX+p.id,
+      provider:p.id,
+      label:'＋ '+p.name+'（新建配置）',
+    }));
+  }
   function normalizedEndpoint(value) {
     return String(value||'').trim().replace(/\/+$/,'').toLowerCase();
   }
@@ -1618,7 +1626,7 @@ var ReviewProfiles = (function () {
     const p=sanitize(profile);
     return p.name+' · '+p.model+(p.route==='gateway'?' · 网关':'')+(p.proxyMode==='custom'?' · 代理':p.proxyMode==='direct'?' · 直连':'');
   }
-  return {PRESETS,preset,create,load,save,sanitize,validate,effectiveEndpoint,label};
+  return {PRESETS,PRESET_OPTION_PREFIX,preset,presetOptions,create,load,save,sanitize,validate,effectiveEndpoint,label};
 })();
 if(typeof module!=='undefined'&&module.exports)module.exports=ReviewProfiles;
 </script>
@@ -1676,11 +1684,19 @@ var ReviewNetwork = (function () {
       ci.nsILoadInfo.SEC_ALLOW_CROSS_ORIGIN_SEC_CONTEXT_IS_NULL,
       ci.nsIContentPolicy.TYPE_OTHER);
     const handler=services.io.getProtocolHandler(uri.scheme).QueryInterface(ci.nsIProxiedProtocolHandler);
-    const pps=cc['@mozilla.org/network/protocol-proxy-service;1']
-      .getService(ci.nsIProtocolProxyService);
-    const proxyInfo=makeProxyInfo(config,pps,ci);
-    const channel=handler.newProxiedChannel(uri,proxyInfo,0,null,baseChannel.loadInfo)
-      .QueryInterface(ci.nsIHttpChannel);
+    let channel;
+    if(config.mode==='inherit') {
+      // Let Gecko resolve Zotero's normal system/PAC proxy on the base channel.
+      // This path is used only after Zotero.HTTP has failed on a newer Gecko
+      // binding, so it preserves the user's inherited network settings.
+      channel=baseChannel.QueryInterface(ci.nsIHttpChannel);
+    } else {
+      const pps=cc['@mozilla.org/network/protocol-proxy-service;1']
+        .getService(ci.nsIProtocolProxyService);
+      const proxyInfo=makeProxyInfo(config,pps,ci);
+      channel=handler.newProxiedChannel(uri,proxyInfo,0,null,baseChannel.loadInfo)
+        .QueryInterface(ci.nsIHttpChannel);
+    }
 
     const verb=String(method||'POST').toUpperCase();
     if (options.body !== undefined && options.body !== null) {
@@ -1688,8 +1704,18 @@ var ReviewNetwork = (function () {
       const stream=cc['@mozilla.org/io/string-input-stream;1'].createInstance(ci.nsIStringInputStream);
       stream.setUTF8Data(payload);
       const bytes=new TextEncoder().encode(payload).byteLength;
-      channel.QueryInterface(ci.nsIUploadChannel2)
-        .explicitSetUploadStream(stream,'application/json; charset=utf-8',bytes,verb);
+      const contentType=Object.entries(options.headers||{})
+        .find(([key])=>String(key).toLowerCase()==='content-type')?.[1]
+        ||'application/octet-stream';
+      const upload=channel.QueryInterface(ci.nsIUploadChannel2);
+      // Current Gecko requires the fifth aStreamHasHeaders argument. Keep a
+      // four-argument fallback for older Zotero runtimes whose XPCOM binding
+      // predates that parameter.
+      try{upload.explicitSetUploadStream(stream,String(contentType),bytes,verb,false);}
+      catch(error){
+        if(!/argument|parameter|not enough/i.test(String(error?.message||error)))throw error;
+        upload.explicitSetUploadStream(stream,String(contentType),bytes,verb);
+      }
     }
     channel.requestMethod=verb;
     const headers=options.headers||{};
@@ -1750,7 +1776,17 @@ var ReviewNetwork = (function () {
 
   async function request(zotero,method,url,options={},profile={}) {
     const config=proxyConfig(profile);
-    if(config.mode==='inherit') return zotero.HTTP.request(method,url,options);
+    if(config.mode==='inherit') {
+      try{return await zotero.HTTP.request(method,url,options);}
+      catch(error){
+        // Zotero builds backed by a newer Gecko can expose a five-argument
+        // nsIUploadChannel2 while their bundled Zotero.HTTP/XHR path still
+        // calls the old four-argument form. Retry only this known binding
+        // failure through the compatible channel implementation above.
+        if(!/nsIUploadChannel2\.explicitSetUploadStream|explicitSetUploadStream/i.test(String(error?.message||error)))throw error;
+        return explicitRequest(method,url,options,config);
+      }
+    }
     return explicitRequest(method,url,options,config);
   }
   return {proxyConfig,request,explicitRequest,makeProxyInfo};
@@ -3491,6 +3527,7 @@ ${JSON.stringify(cards).slice(0,80000)}
     if(state.sessionKeys.has(p.id)) return state.sessionKeys.get(p.id)||'';
     return p.rememberKey ? String(rt.getPref('profileSecret.'+p.id,'')||'') : '';
   }
+  const PRESET_OPTION_PREFIX=ReviewProfiles.PRESET_OPTION_PREFIX||'__reviewstudio_preset__';
   function refreshDropdowns(){ReviewDropdown?.refreshAll?.();}
   function fillProfileSelectors() {
     for(const id of ['apiProfileSelect','activeProfileQuick']) {
@@ -3499,6 +3536,23 @@ ${JSON.stringify(cards).slice(0,80000)}
         const option=elm('option',null,ReviewProfiles.label(p));
         option.value=p.id;
         select.appendChild(option);
+      }
+      // The profile list contains saved configurations, while the provider
+      // presets are otherwise several fields lower in the settings form. Add
+      // direct "new from preset" entries to the management selector so a
+      // fresh installation can reach DeepSeek/Qwen/etc. without guessing
+      // that it must first create a blank profile and scroll down.
+      if(id==='apiProfileSelect'){
+        const divider=elm('option',null,'— 新建服务商配置 —');
+        divider.disabled=true;
+        divider.value='';
+        select.appendChild(divider);
+        for(const preset of ReviewProfiles.presetOptions()){
+          const option=elm('option',null,preset.label);
+          option.value=preset.value;
+          option.dataset.presetProvider=preset.provider;
+          select.appendChild(option);
+        }
       }
       select.value=state.activeAPIId;
     }
@@ -3715,14 +3769,16 @@ ${JSON.stringify(cards).slice(0,80000)}
     byId('settingsStatus').textContent='已切换至 '+activeProfile().name+'；发送论文前需重新确认数据传输同意';
     updateRunOverview();
   }
-  function addAPIProfile(clone=false){
+  function addAPIProfile(clone=false,provider='chatgpt'){
     if(state.busy||state.apiProfiles.length>=30){alert('最多可保存 30 套 API 配置');return;}
     saveSettings({silent:true});
     const current=activeProfile();
     const p=clone
       ?ReviewProfiles.sanitize({...current,id:ReviewProfiles.create(current.provider).id,
         name:current.name+' · 副本',rememberKey:false})
-      :ReviewProfiles.create('chatgpt','新模型配置 '+(state.apiProfiles.length+1));
+      :ReviewProfiles.create(provider,provider==='chatgpt'
+        ?'新模型配置 '+(state.apiProfiles.length+1)
+        :ReviewProfiles.preset(provider).name+' · 新配置');
     state.apiProfiles.push(p);
     state.activeAPIId=p.id;
     state.sessionKeys.set(p.id,''); // cloning intentionally excludes credentials
@@ -4494,7 +4550,14 @@ ${JSON.stringify(cards).slice(0,80000)}
     byId('signInChatGPT').addEventListener('click',()=>void loginChatGPT());
     byId('signOutChatGPT').addEventListener('click',()=>void logoutChatGPT());
     byId('refreshChatGPTModels').addEventListener('click',()=>void listChatGPTModels());
-    byId('apiProfileSelect').addEventListener('change',()=>switchAPI(byId('apiProfileSelect').value));
+    byId('apiProfileSelect').addEventListener('change',()=>{
+      const value=byId('apiProfileSelect').value;
+      if(value.startsWith(PRESET_OPTION_PREFIX)){
+        addAPIProfile(false,value.slice(PRESET_OPTION_PREFIX.length));
+        return;
+      }
+      switchAPI(value);
+    });
     byId('activeProfileQuick').addEventListener('change',()=>switchAPI(byId('activeProfileQuick').value));
     byId('addAPIProfile').addEventListener('click',()=>addAPIProfile(false));
     byId('cloneAPIProfile').addEventListener('click',()=>addAPIProfile(true));

@@ -43,7 +43,7 @@ async function testProxy(){
       getProtocolHandler:()=>({QueryInterface:()=>({newProxiedChannel:(_uri,p)=>{
         call.push({kind:'channel',proxy:p});
         const channel={responseStatus:200,headers:{},QueryInterface:()=>channel,
-          explicitSetUploadStream(_stream,_contentType,length,method){call.push({kind:'explicit-upload',length,method});},
+          explicitSetUploadStream(_stream,_contentType,length,method,streamHasHeaders){call.push({kind:'explicit-upload',length,method,streamHasHeaders});},
           setRequestHeader(k,v){channel.headers[k]=v},cancel(){},
           asyncOpen(listener){
             const bytes=new TextEncoder().encode(JSON.stringify({ok:true,seq:++seq}));
@@ -61,11 +61,40 @@ async function testProxy(){
     assert.equal(proxyArgs[0],'socks');assert.equal(proxyArgs[1],'127.0.0.1');assert.equal(proxyArgs[2],1080);
     assert.equal(proxyArgs[5],128,'SOCKS remote DNS must be explicit');
     assert.equal(call.find(x=>x.kind==='channel').proxy.type,'socks');
+    assert.equal(call.find(x=>x.kind==='explicit-upload').streamHasHeaders,false,
+      'Gecko upload stream must declare that the body does not include HTTP headers');
     const ret=await Network.request(zotero,'GET','https://api.example.test/',{},{proxyMode:'direct'});
     assert(JSON.parse(ret.responseText).ok);
     assert.equal(call.filter(x=>x.kind==='info').at(-1).args[0],'direct');
     await Network.request(zotero,'GET','https://api.example.test/',{},{proxyMode:'inherit'});
     assert.equal(inherited,1,'Inherited network mode delegates to Zotero.HTTP only');
+
+    // Newer Gecko bindings can reject the four-argument upload call used by
+    // an older Zotero.HTTP/XHR implementation. The inherited mode must retry
+    // through the channel transport instead of leaving OAuth/API requests
+    // unusable after the browser callback succeeds.
+    const fallbackChannel={responseStatus:200,headers:{},QueryInterface:()=>fallbackChannel,
+      explicitSetUploadStream(_stream,contentType,length,method,streamHasHeaders){
+        call.push({kind:'fallback-upload',contentType,length,method,streamHasHeaders});
+      },
+      setRequestHeader(k,v){fallbackChannel.headers[k]=v},cancel(){},
+      asyncOpen(listener){
+        const bytes=new TextEncoder().encode('{"fallback":true}');
+        queueMicrotask(()=>{listener.onStartRequest(fallbackChannel);listener.onDataAvailable(fallbackChannel,{bytes},0,bytes.length);listener.onStopRequest(fallbackChannel,0)});
+      }};
+    const oldChannelFactory=global.Services.io.newChannelFromURI;
+    const oldHTTPRequest=zotero.HTTP.request;
+    global.Services.io.newChannelFromURI=()=>fallbackChannel;
+    zotero.HTTP.request=async()=>{throw new Error('Not enough arguments [nsIUploadChannel2.explicitSetUploadStream]');};
+    const recovered=await Network.request(zotero,'POST','https://auth.openai.com/api/accounts/oauth/token',
+      {body:'grant_type=authorization_code',headers:{'Content-Type':'application/x-www-form-urlencoded'}},
+      {proxyMode:'inherit'});
+    assert.equal(JSON.parse(recovered.responseText).fallback,true);
+    const upload=call.find(x=>x.kind==='fallback-upload');
+    assert.equal(upload.contentType,'application/x-www-form-urlencoded');
+    assert.equal(upload.streamHasHeaders,false);
+    global.Services.io.newChannelFromURI=oldChannelFactory;
+    zotero.HTTP.request=oldHTTPRequest;
   }finally {delete global.Components;delete global.ChromeUtils;delete global.Services;}
   console.log('Per-API independent proxy modes and Gecko channel mock passed');
 }
