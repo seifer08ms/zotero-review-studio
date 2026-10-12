@@ -4,7 +4,11 @@
 [![Latest Release](https://img.shields.io/github/v/release/seifer08ms/zotero-review-studio)](https://github.com/seifer08ms/zotero-review-studio/releases/latest)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-**Current version: v0.5.5 (beta)** · [Download XPI](https://github.com/seifer08ms/zotero-review-studio/releases/latest/download/zotero-review-studio-0.5.5.xpi) · [中文说明](README.zh-CN.md)
+**Current version: v0.5.6 (beta)** · [Download XPI](https://github.com/seifer08ms/zotero-review-studio/releases/latest/download/zotero-review-studio-0.5.6.xpi) · [中文说明](README.zh-CN.md)
+
+## New in v0.5.6: remembered data-transfer consent
+
+The first explicit acknowledgement for a model destination is remembered for that unchanged configuration. Changing the provider, model, endpoint, gateway or proxy route requires a new acknowledgement before paper content can be sent.
 
 ## New in v0.5.5: bounded parallel evidence extraction
 
@@ -108,11 +112,11 @@ python3 tests/browser_smoke.py # Chromium / Playwright required
 python3 scripts/build_xpi.py
 ```
 
-Build result: `dist/zotero-review-studio-0.5.5.xpi`. The plugin itself has no npm dependencies.
+Build result: `dist/zotero-review-studio-0.5.6.xpi`. The plugin itself has no npm dependencies.
 
 ## Install & updates
 
-1. Download `zotero-review-studio-0.5.5.xpi` from the [latest GitHub Release](https://github.com/seifer08ms/zotero-review-studio/releases/latest).
+1. Download `zotero-review-studio-0.5.6.xpi` from the [latest GitHub Release](https://github.com/seifer08ms/zotero-review-studio/releases/latest).
 2. Zotero 7 → Tools → Plugins → gear → **Install Plugin From File**; choose the XPI and restart Zotero if prompted.
 3. The XPI includes a Zotero `update_url`. GitHub Releases publish the corresponding `update.json` with a SHA-256 integrity hash, enabling supported automatic update checks.
 
