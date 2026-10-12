@@ -53,7 +53,7 @@ textarea {resize:vertical;line-height:1.5;}
 .footnote {border-top:1px solid var(--line);margin-top:25px;padding:12px 0;font-size:10.5px;color:var(--muted);line-height:1.7}
 .hidden {display:none!important}
 .progress-panel {margin:0 0 15px}.progress-panel progress {width:100%;height:11px;accent-color:var(--blue)}
-.stage{color:var(--blue);font-weight:600;margin:10px 0}.log{font-size:11px;line-height:1.6;max-height:195px;overflow:auto;background:var(--bg);color:var(--muted);white-space:pre-wrap;padding:10px;border-radius:7px;margin:0}
+.stage{color:var(--blue);font-weight:600;margin:10px 0}.progress-meta{font-size:11px;color:var(--muted);min-height:18px;margin:-3px 0 8px}.log{font-size:11px;line-height:1.6;max-height:195px;overflow:auto;background:var(--bg);color:var(--muted);white-space:pre-wrap;padding:10px;border-radius:7px;margin:0}
 .result-tabs{display:flex;border-bottom:1px solid var(--line);margin-bottom:16px;gap:5px;}
 .tab{cursor:pointer;font-weight:600;font-size:12px;padding:10px 13px;border:0;border-bottom:2px solid transparent;background:transparent;color:var(--muted)}
 .tab.current{color:var(--blue);border-bottom-color:var(--blue)}

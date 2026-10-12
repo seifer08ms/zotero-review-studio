@@ -93,6 +93,8 @@ async function main(){
  assert.equal(lastPayload.store,false);assert.equal(lastPayload.stream,true);
  assert.equal(lastPayload.instructions,'System instruction');
  assert.equal(lastPayload.input[0].content,'Research text');
+ await m.request([{role:'user',content:'Short response'}],proxy,123);
+ assert.equal(lastPayload.max_output_tokens,123);
  await m.signOut(proxy);assert.equal(m.isConnected(),false);assert.equal(records.length,0);
  for(const path of ['/oauth/token','/.well-known/jwks.json','/v1/models','/v1/responses']) {
    assert(requestsWithProxy.some(x=>x.url.includes(path)&&x.mode==='custom'), 'OAuth/model calls must inherit per-profile proxy: '+path);
