@@ -4,7 +4,12 @@
 [![Latest Release](https://img.shields.io/github/v/release/seifer08ms/zotero-review-studio)](https://github.com/seifer08ms/zotero-review-studio/releases/latest)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-**Current version: v0.5.1 (beta)** · [Download XPI](https://github.com/seifer08ms/zotero-review-studio/releases/latest/download/zotero-review-studio-0.5.1.xpi) · [中文说明](README.zh-CN.md)
+**Current version: v0.5.2 (beta)** · [Download XPI](https://github.com/seifer08ms/zotero-review-studio/releases/latest/download/zotero-review-studio-0.5.2.xpi) · [中文说明](README.zh-CN.md)
+
+## New in v0.5.2: restore compatible API profiles and fix XUL dropdown mounting
+
+- Hides the native XHTML/XUL select layer before showing the custom opaque popup, preventing duplicate transparent options from overlapping the settings panel.
+- Preserves and repairs DeepSeek, Qwen, SiliconFlow, OpenRouter, Ollama and LM Studio profiles during migration, while adding ChatGPT as a separate account option.
 
 ## New in v0.5.1: opaque Zotero dropdowns
 
@@ -86,11 +91,11 @@ python3 tests/browser_smoke.py # Chromium / Playwright required
 python3 scripts/build_xpi.py
 ```
 
-Build result: `dist/zotero-review-studio-0.5.1.xpi`. The plugin itself has no npm dependencies.
+Build result: `dist/zotero-review-studio-0.5.2.xpi`. The plugin itself has no npm dependencies.
 
 ## Install & updates
 
-1. Download `zotero-review-studio-0.5.1.xpi` from the [latest GitHub Release](https://github.com/seifer08ms/zotero-review-studio/releases/latest).
+1. Download `zotero-review-studio-0.5.2.xpi` from the [latest GitHub Release](https://github.com/seifer08ms/zotero-review-studio/releases/latest).
 2. Zotero 7 → Tools → Plugins → gear → **Install Plugin From File**; choose the XPI and restart Zotero if prompted.
 3. The XPI includes a Zotero `update_url`. GitHub Releases publish the corresponding `update.json` with a SHA-256 integrity hash, enabling supported automatic update checks.
 

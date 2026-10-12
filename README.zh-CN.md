@@ -1,4 +1,9 @@
-# Zotero Review Studio v0.5.1（Zotero 7 综述研究工作台）
+# Zotero Review Studio v0.5.2（Zotero 7 综述研究工作台）
+
+## v0.5.2：恢复兼容 API 配置并修复 XUL 下拉挂载
+
+- 先隐藏 XHTML/XUL 原生 select，再显示不透明自绘菜单，避免透明原生选项与设置界面重叠。
+- 迁移配置时保留并修复 DeepSeek、通义千问、SiliconFlow、OpenRouter、Ollama、LM Studio 等服务商，同时把 ChatGPT 作为独立选项加入。
 
 ## v0.5.1：修复下拉列表透明背景
 
@@ -130,7 +135,7 @@ python3 tests/browser_smoke.py  # 需要 Playwright + Chromium
 python3 scripts/build_xpi.py
 ```
 
-XPI 输出位于 `dist/zotero-review-studio-0.5.1.xpi`。无需 npm 安装。
+XPI 输出位于 `dist/zotero-review-studio-0.5.2.xpi`。无需 npm 安装。
 
 MIT License.
 
